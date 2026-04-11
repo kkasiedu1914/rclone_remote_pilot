@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+set -eEuo pipefail
+IFS=$'\n\t'
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/lib/config.sh"
+load_project_env "$SCRIPT_DIR"
+ensure_runtime_dirs
+
+EMAIL_START_OK=0
+
+email_log_event() {
+  local status="$1"
+  local detail="${2:-}"
+  local ts=""
+  ts="$(TZ="$REPORT_TZ_ET" date -Is 2>/dev/null || echo unknown)"
+  {
+    printf '[%s] job_notifier.sh status=%s\n' "$ts" "$status"
+    printf 'job_id=%s\n' "${JOB_ID:-unknown}"
+    printf 'job_name=%s\n' "${JOB_NAME:-unknown}"
+    [[ -n "$detail" ]] && printf '%s\n' "$detail"
+    printf '\n'
+  } >> "$EMAIL_LOG_FILE" 2>/dev/null || true
+}
+
+email_on_err() {
+  local exit_code=$?
+  if (( EMAIL_START_OK == 0 )); then
+    email_log_event "FAIL_START" "exit_code=$exit_code"
+  fi
+  return "$exit_code"
+}
+trap email_on_err ERR
+
+if [[ -z "${SLURM_JOB_ID:-}" ]]; then
+  email_log_event "FAIL_START" "missing=SLURM_JOB_ID"
+  echo "This script must run inside a Slurm job" >&2
+  exit 1
+fi
+
+JOB_ID="$SLURM_JOB_ID"
+JOB_NAME="${SLURM_JOB_NAME:-unknown}"
+HOST="$(hostname)"
+WORKDIR="$(pwd)"
+
+if [[ -z "${SMTP_USER:-}" ]]; then
+  email_log_event "FAIL_START" "missing=SMTP_USER"
+  echo "Set SMTP_USER in .env or your shell" >&2
+  exit 1
+fi
+if [[ -z "${SMTP_PASS:-}" ]]; then
+  email_log_event "FAIL_START" "missing=SMTP_PASS"
+  echo "Set SMTP_PASS or provide NOTIFIER_PASSWORD_FILE" >&2
+  exit 1
+fi
+
+mapfile -t recipients < <(join_notification_recipients)
+if (( ${#recipients[@]} == 0 )); then
+  email_log_event "FAIL_START" "missing=notification_recipients"
+  echo "Set NOTIFICATION_TO_PRIMARY and optionally NOTIFICATION_TO_SECONDARY" >&2
+  exit 1
+fi
+
+EMAIL_START_OK=1
+email_log_event "START_OK"
+
+LOCKFILE="${EMAIL_LOCKFILE:-$STATE_DIR/.job_notifier.lock.${JOB_ID}}"
+exec 9>"$LOCKFILE"
+if ! flock -n 9; then
+  exit 0
+fi
+
+time_to_seconds() {
+  local t="$1"
+  local days=0 h=0 m=0 s=0
+
+  if [[ -z "$t" || "$t" == "UNLIMITED" || "$t" == "NOT_SET" || "$t" == "N/A" || "$t" == "Unknown" || "$t" == "UNKNOWN" ]]; then
+    echo 0
+    return
+  fi
+
+  if [[ "$t" == *-* ]]; then
+    days="${t%%-*}"
+    t="${t#*-}"
+  fi
+
+  local -a parts=()
+  IFS=':' read -r -a parts <<<"$t"
+  if (( ${#parts[@]} == 3 )); then
+    h="${parts[0]}"; m="${parts[1]}"; s="${parts[2]}"
+  elif (( ${#parts[@]} == 2 )); then
+    m="${parts[0]}"; s="${parts[1]}"
+  elif (( ${#parts[@]} == 1 )); then
+    s="${parts[0]}"
+  else
+    echo 0
+    return
+  fi
+
+  echo $((10#$days * 86400 + 10#${h:-0} * 3600 + 10#${m:-0} * 60 + 10#${s:-0}))
+}
+
+is_unknown() {
+  local value="${1:-}"
+  [[ -z "$value" || "$value" == "unknown" || "$value" == "UNKNOWN" || "$value" == "N/A" || "$value" == "Unknown" || "$value" == "NOT_SET" ]]
+}
+
+epoch_to_tz() {
+  local epoch="$1"
+  local tz="$2"
+  TZ="$tz" date -d "@$epoch" "+%Y-%m-%d %H:%M:%S %Z (%z)" 2>/dev/null || echo unknown
+}
+
+slurm_ts_to_tz() {
+  local ts="$1"
+  local tz="$2"
+  if is_unknown "$ts"; then
+    echo unknown
+    return
+  fi
+  local epoch=""
+  epoch="$(TZ="$SLURM_TIME_TZ" date -d "$ts" +%s 2>/dev/null || true)"
+  if [[ -z "$epoch" ]]; then
+    echo unknown
+    return
+  fi
+  epoch_to_tz "$epoch" "$tz"
+}
+
+get_slurm_times() {
+  SLURM_START="unknown"
+  SLURM_TIMELIMIT="unknown"
+  SLURM_TIMELEFT="unknown"
+  SLURM_END_EST="unknown"
+
+  local info=""
+  if info=$(squeue -j "$JOB_ID" -h -o "%S|%e|%l|%L" 2>/dev/null) && [[ -n "$info" ]]; then
+    IFS='|' read -r squeue_start squeue_end squeue_limit squeue_left <<< "$info"
+    ! is_unknown "${squeue_start:-}" && SLURM_START="$squeue_start"
+    ! is_unknown "${squeue_limit:-}" && SLURM_TIMELIMIT="$squeue_limit"
+    ! is_unknown "${squeue_left:-}" && SLURM_TIMELEFT="$squeue_left"
+    ! is_unknown "${squeue_end:-}" && SLURM_END_EST="$squeue_end"
+  fi
+
+  if is_unknown "$SLURM_START" || is_unknown "$SLURM_TIMELIMIT" || is_unknown "$SLURM_END_EST"; then
+    info=""
+    if info=$(sacct -j "$JOB_ID" -X -n -P -o Start,End,Timelimit 2>/dev/null | head -n1) && [[ -n "$info" ]]; then
+      IFS='|' read -r acct_start acct_end acct_limit <<< "$info"
+      is_unknown "$SLURM_START" && ! is_unknown "${acct_start:-}" && SLURM_START="$acct_start"
+      is_unknown "$SLURM_TIMELIMIT" && ! is_unknown "${acct_limit:-}" && SLURM_TIMELIMIT="$acct_limit"
+      is_unknown "$SLURM_END_EST" && ! is_unknown "${acct_end:-}" && SLURM_END_EST="$acct_end"
+    fi
+  fi
+
+  if is_unknown "$SLURM_END_EST"; then
+    local left_secs
+    left_secs="$(time_to_seconds "$SLURM_TIMELEFT")"
+    if (( left_secs > 0 )); then
+      SLURM_END_EST="$(date -d "@$(( $(date +%s) + left_secs ))" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo unknown)"
+      return
+    fi
+
+    local tl_seconds=""
+    tl_seconds="$(time_to_seconds "$SLURM_TIMELIMIT")"
+    if (( tl_seconds > 0 )) && ! is_unknown "$SLURM_START"; then
+      local start_epoch=""
+      start_epoch="$(date -d "$SLURM_START" +%s 2>/dev/null || echo "")"
+      if [[ -n "$start_epoch" ]]; then
+        SLURM_END_EST="$(date -d "@$(( start_epoch + tl_seconds ))" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo unknown)"
+      fi
+    fi
+  fi
+}
+
+get_final_state() {
+  local tries=0
+  local state=""
+  while (( tries < 60 )); do
+    state="$(sacct -j "$JOB_ID" -X -o State -n 2>/dev/null | head -n1 | awk '{print $1}')"
+    if [[ -n "$state" ]]; then
+      echo "$state"
+      return
+    fi
+    sleep 10
+    tries=$((tries + 1))
+  done
+  echo "UNKNOWN"
+}
+
+send_mail() {
+  local status="$1"
+  local icon="ℹ️"
+  case "$status" in
+    STARTED*) icon="✅" ;;
+    *COMPLETED*|*FINISHED*) icon="✅" ;;
+    *FAILED*|*TIMEOUT*|*CANCELLED*) icon="❌" ;;
+  esac
+
+  get_slurm_times
+  local now_epoch=""
+  now_epoch="$(date +%s)"
+  local now_et now_gmt start_et start_gmt end_et end_gmt
+  now_et="$(epoch_to_tz "$now_epoch" "$REPORT_TZ_ET")"
+  now_gmt="$(epoch_to_tz "$now_epoch" "$REPORT_TZ_GMT")"
+  start_et="$(slurm_ts_to_tz "$SLURM_START" "$REPORT_TZ_ET")"
+  start_gmt="$(slurm_ts_to_tz "$SLURM_START" "$REPORT_TZ_GMT")"
+  end_et="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_ET")"
+  end_gmt="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_GMT")"
+
+  local subject="[Remote Pilot $JOB_ID] $status $icon"
+  local body=""
+  body=$(cat <<EOF
+Status:          $status
+Job ID:          $JOB_ID
+Job name:        $JOB_NAME
+Host:            $HOST
+Workdir:         $WORKDIR
+
+Current time (ET):       $now_et
+Current time (GMT):      $now_gmt
+Slurm TZ assumed:        $SLURM_TIME_TZ
+
+Nominal start (ET):      $start_et
+Nominal start (GMT):     $start_gmt
+Time limit (walltime):   $SLURM_TIMELIMIT
+Expected end (ET):       $end_et
+Expected end (GMT):      $end_gmt
+Time left (per Slurm):   $SLURM_TIMELEFT
+
+This job is running on a remote resource.
+EOF
+)
+
+  case "$status" in
+    STARTED*)
+      body+=$'\nYou will receive another email when this job finishes.\n'
+      ;;
+    *)
+      body+=$'\nThe job has finished; this message reflects the final Slurm state.\n'
+      ;;
+  esac
+
+  read -r -a files <<< "$MAIL_LOG_FILES"
+  local file=""
+  for file in "${files[@]}"; do
+    body+=$'\n------------------------------\n'
+    body+="Tail of log file: $file"$'\n'
+    if [[ -f "$file" ]]; then
+      body+="$(tail -n 40 "$file")"$'\n'
+    else
+      body+="(file not found)"$'\n'
+    fi
+  done
+
+  local -a mail_cmd=("$SCRIPT_DIR/send_email.py")
+  local recipient=""
+  for recipient in "${recipients[@]}"; do
+    mail_cmd+=(--to "$recipient")
+  done
+  mail_cmd+=(--subject "$subject" --body "$body")
+  "${mail_cmd[@]}"
+}
+
+main() {
+  send_mail "STARTED"
+  get_slurm_times
+
+  local left_secs=0
+  left_secs="$(time_to_seconds "$SLURM_TIMELEFT")"
+  local sleep_secs=$(( left_secs - FINISH_MARGIN_SECONDS ))
+  (( sleep_secs < 0 )) && sleep_secs=0
+  if (( sleep_secs > 0 )); then
+    sleep "$sleep_secs"
+  fi
+
+  local final_state=""
+  final_state="$(get_final_state)"
+  send_mail "FINISHED (state=$final_state)"
+}
+
+main "$@"
