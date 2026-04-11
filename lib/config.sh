@@ -111,7 +111,7 @@ load_project_env() {
   export PIDS_DIR="$(first_defined_value "$STATE_DIR/relay-jobs" "${pref}_PIDS_DIR" PIDS_DIR)"
   export RCLONE_CACHE_DIR="$(first_defined_value "$STATE_DIR/rclone-cache" "${pref}_RCLONE_CACHE_DIR" RCLONE_CACHE_DIR)"
 
-  export NOTIFIER_PASSWORD_FILE="$(first_defined_value "$HOME/.secrets/remote_pilot_gmail_app_password" "${pref}_NOTIFIER_PASSWORD_FILE" NOTIFIER_PASSWORD_FILE)"
+  export NOTIFIER_PASSWORD_FILE="$(first_defined_value "$HOME/.secrets/notifier_gmail_app_password" "${pref}_NOTIFIER_PASSWORD_FILE" NOTIFIER_PASSWORD_FILE)"
   if [[ -z "${SMTP_PASS:-}" && -r "$NOTIFIER_PASSWORD_FILE" ]]; then
     export SMTP_PASS="$(< "$NOTIFIER_PASSWORD_FILE")"
   fi

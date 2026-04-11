@@ -67,6 +67,20 @@ publish_logs() {
   done
 }
 
+ensure_command_script_placeholder() {
+  local command_dir=""
+  command_dir="$(dirname "$COMMAND_SCRIPT_IN")"
+  mkdir -p "$command_dir" 2>/dev/null || true
+
+  if [[ ! -e "$COMMAND_SCRIPT_IN" ]]; then
+    : > "$COMMAND_SCRIPT_IN" 2>/dev/null || {
+      log "WARN: failed to create placeholder command file at $COMMAND_SCRIPT_IN"
+      return 1
+    }
+    log "Created placeholder command file at $COMMAND_SCRIPT_IN"
+  fi
+}
+
 append_to_history() {
   local script_path="$1"
   [[ "$WRITE_COMMAND_HISTORY" == "1" ]] || return 0
@@ -313,6 +327,7 @@ fi
 if ! ensure_command_channel_ready; then
   exit 1
 fi
+ensure_command_script_placeholder || true
 
 log "=== relay starting in $WORK_DIR ==="
 log "Project name: $PROJECT_NAME"
@@ -356,7 +371,13 @@ while [[ "$SHOULD_EXIT" -eq 0 ]]; do
         fi
       fi
     fi
-  elif [[ -s "$PREVIOUS_COMMAND_SCRIPT" ]]; then
+  else
+    if [[ ! -e "$COMMAND_SCRIPT_IN" ]]; then
+      ensure_command_script_placeholder || true
+    fi
+  fi
+
+  if [[ ! -s "$COMMAND_SCRIPT_IN" && -s "$PREVIOUS_COMMAND_SCRIPT" ]]; then
     log "No script to run (missing or empty: $COMMAND_SCRIPT_IN)"
   fi
 

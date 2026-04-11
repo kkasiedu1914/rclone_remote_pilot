@@ -97,7 +97,7 @@ default_mirror_subdir="${MIRROR_REMOTE_SUBDIR:-${TARGET_PROJECT}/$(hostname -s 2
 
 echo "Remote Pilot project configuration"
 echo "Project name: $TARGET_PROJECT"
-echo "This writes $PROJECT_ENV_FILE and creates project runtime directories."
+echo "This writes $PROJECT_ENV_FILE."
 echo "ARC / VT defaults: SMTP sender defaults to arc.knust.job.notifier@gmail.com and the VT secondary recipient defaults to achenie@vt.edu."
 echo "Primary recipient has no default and should be set by the user."
 echo
@@ -108,6 +108,7 @@ prompt_value PROJECT_DIR_VALUE "Main project directory on the remote system" "$d
 prompt_value COMMAND_CHANNEL_FOLDER_ID_VALUE "Google Drive folder ID for the shared command channel" "$COMMAND_CHANNEL_FOLDER_ID"
 prompt_value MIRROR_ROOT_FOLDER_ID_VALUE "Google Drive folder ID for the shared mirror root" "$MIRROR_ROOT_FOLDER_ID"
 prompt_value COMMAND_CHANNEL_MOUNT_VALUE "Local mount point for the command channel" "$default_mount"
+prompt_value COMMAND_FILE_NAME_VALUE "Command file name to watch" "${COMMAND_FILE_NAME:-commands.sh}"
 prompt_value MIRROR_REMOTE_SUBDIR_VALUE "Mirror subdirectory name for this machine" "$default_mirror_subdir"
 prompt_value SMTP_USER_VALUE "SMTP sender email for optional job notifications" "${SMTP_USER:-arc.knust.job.notifier@gmail.com}"
 prompt_value NOTIFICATION_TO_PRIMARY_VALUE "Primary notification recipient (required if using email)" "${NOTIFICATION_TO_PRIMARY:-}"
@@ -115,7 +116,7 @@ prompt_value NOTIFICATION_TO_SECONDARY_VALUE "Secondary notification recipient" 
 prompt_value NOTIFIER_PASSWORD_FILE_VALUE "Password file for SMTP app password" "$NOTIFIER_PASSWORD_FILE"
 
 PROJECT_INSTANCE_ROOT_VALUE="${PROJECT_DIR_VALUE}/.remote-pilot/${TARGET_PROJECT}"
-mkdir -p "$COMMAND_CHANNEL_MOUNT_VALUE" "$PROJECT_INSTANCE_ROOT_VALUE/logs" "$PROJECT_INSTANCE_ROOT_VALUE/state" "$PROJECT_ENV_DIR"
+mkdir -p "$PROJECT_ENV_DIR"
 
 ENV_FILE="$PROJECT_ENV_FILE"
 : > "$ENV_FILE"
@@ -130,7 +131,7 @@ write_setting "PROJECT_INSTANCE_ROOT" "$PROJECT_INSTANCE_ROOT_VALUE"
 write_setting "RCLONE_REMOTE" "$RCLONE_REMOTE_VALUE"
 write_setting "COMMAND_CHANNEL_FOLDER_ID" "$COMMAND_CHANNEL_FOLDER_ID_VALUE"
 write_setting "COMMAND_CHANNEL_MOUNT" "$COMMAND_CHANNEL_MOUNT_VALUE"
-write_setting "COMMAND_FILE_NAME" "commands.sh"
+write_setting "COMMAND_FILE_NAME" "$COMMAND_FILE_NAME_VALUE"
 write_setting "COMMAND_CHANNEL_LOG_SUBDIR" "logs"
 write_setting "MIRROR_ROOT_FOLDER_ID" "$MIRROR_ROOT_FOLDER_ID_VALUE"
 write_setting "MIRROR_REMOTE_SUBDIR" "$MIRROR_REMOTE_SUBDIR_VALUE"
@@ -149,12 +150,15 @@ write_setting "NOTIFICATION_TO_SECONDARY" "$NOTIFICATION_TO_SECONDARY_VALUE"
 write_setting "NOTIFIER_PASSWORD_FILE" "$NOTIFIER_PASSWORD_FILE_VALUE"
 chmod 600 "$ENV_FILE"
 
+cat <<'EOF'
+EOF
+printf '\nSaved project configuration to %s\n\n' "$ENV_FILE"
+printf 'Optional machine-only overrides can be placed in:\n  %s\n\n' "$PROJECT_LOCAL_ENV_FILE"
 cat <<EOF
-
-Saved project configuration to $ENV_FILE
-
-Optional machine-only overrides can be placed in:
-  $PROJECT_LOCAL_ENV_FILE
+Note:
+- configure.sh does not create the remote HPC project or mount directories.
+- Those paths are stored as configuration only.
+- The runtime scripts create writable runtime directories on the machine where the relay actually runs.
 
 Next steps:
 1. Select the project instance:
