@@ -39,7 +39,7 @@ It is designed for this workflow:
 - `repair_mount.sh`
   Cleans up a broken or stale mount.
 
-Legacy wrappers and older reference material are now collected in `legacy/`:
+Legacy wrappers and older reference material are in `legacy/`:
 
 - `legacy/start_kk_job.sh`
 - `legacy/kkremote.sh`
@@ -222,11 +222,11 @@ The parameters below are the ones most users are likely to adjust. They can be g
 - `NOTIFICATION_TO_SECONDARY`
   Secondary recipient. Default is `achenie@vt.edu`.
 - `JOB_NOTIFICATION_NAME`
-  Fallback Slurm job name used when `SLURM_JOB_NAME` is unset.
+  Fallback Slurm job name used when `SLURM_JOB_NAME` is unset. By default this now falls back to `PROJECT_NAME`.
 - `EMAIL_ON_START`
   If `1`, the supervisor launches the notifier once per job.
 - `MAIL_LOG_FILES`
-  Space-separated list of files whose tails are attached in start/finish notification emails.
+  Space-separated list of files whose tails are attached in start/finish notification emails. By default this now includes the Slurm stdout file plus the current relay and supervisor logs.
 - `FINISH_MARGIN_SECONDS`
   Time-before-walltime margin for final cleanup behavior.
 - `SLURM_TIME_TZ`

@@ -41,6 +41,9 @@ fi
 
 JOB_ID="$SLURM_JOB_ID"
 JOB_NAME="${SLURM_JOB_NAME:-unknown}"
+if [[ -z "$JOB_NAME" || "$JOB_NAME" == "unknown" || "$JOB_NAME" == "Unknown" || "$JOB_NAME" == "UNKNOWN" ]]; then
+  JOB_NAME="$PROJECT_NAME"
+fi
 HOST="$(hostname)"
 WORKDIR="$(pwd)"
 
@@ -241,13 +244,42 @@ EOF
       ;;
   esac
 
+  resolve_mail_log_file() {
+    local file="$1"
+    case "$file" in
+      relay.log) echo "$RELAY_LOG_FILE" ;;
+      remote.log) echo "$RELAY_LOG_FILE" ;;
+      supervisor.log) echo "$SUPERVISOR_LOG_FILE" ;;
+      command-output.log) echo "$COMMAND_OUTPUT_LOG_FILE" ;;
+      sync.log) echo "$SYNC_LOG_FILE" ;;
+      email.log) echo "$EMAIL_LOG_FILE" ;;
+      *)
+        if [[ "$file" == /* ]]; then
+          echo "$file"
+        elif [[ -f "$file" ]]; then
+          echo "$file"
+        elif [[ -f "$LOG_DIR/$file" ]]; then
+          echo "$LOG_DIR/$file"
+        else
+          echo "$file"
+        fi
+        ;;
+    esac
+  }
+
+  local split_ifs="$IFS"
+  local -a files=()
+  IFS=' '
   read -r -a files <<< "$MAIL_LOG_FILES"
+  IFS="$split_ifs"
   local file=""
+  local resolved_file=""
   for file in "${files[@]}"; do
+    resolved_file="$(resolve_mail_log_file "$file")"
     body+=$'\n------------------------------\n'
-    body+="Tail of log file: $file"$'\n'
-    if [[ -f "$file" ]]; then
-      body+="$(tail -n 40 "$file")"$'\n'
+    body+="Tail of log file: $resolved_file"$'\n'
+    if [[ -f "$resolved_file" ]]; then
+      body+="$(tail -n 40 "$resolved_file")"$'\n'
     else
       body+="(file not found)"$'\n'
     fi

@@ -125,7 +125,7 @@ load_project_env() {
   export SMTP_USER="$(first_defined_value "arc.knust.job.notifier@gmail.com" "${pref}_SMTP_USER" SMTP_USER)"
   export NOTIFICATION_TO_PRIMARY="$(first_defined_value "${TO1:-}" "${pref}_NOTIFICATION_TO_PRIMARY" NOTIFICATION_TO_PRIMARY TO1)"
   export NOTIFICATION_TO_SECONDARY="$(first_defined_value "achenie@vt.edu" "${pref}_NOTIFICATION_TO_SECONDARY" NOTIFICATION_TO_SECONDARY TO2)"
-  export JOB_NOTIFICATION_NAME="$(first_defined_value "RemotePilotSupervisor" "${pref}_JOB_NOTIFICATION_NAME" JOB_NOTIFICATION_NAME)"
+  export JOB_NOTIFICATION_NAME="$(first_defined_value "$PROJECT_NAME" "${pref}_JOB_NOTIFICATION_NAME" JOB_NOTIFICATION_NAME)"
   export EMAIL_ON_START="$(first_defined_value "1" "${pref}_EMAIL_ON_START" EMAIL_ON_START)"
   export EMAIL_SENTINEL_FILE="$(first_defined_value "$STATE_DIR/.email_notifier.started.${SLURM_JOB_ID:-unknown}" "${pref}_EMAIL_SENTINEL_FILE" EMAIL_SENTINEL_FILE)"
   export FINISH_MARGIN_SECONDS="$(first_defined_value "60" "${pref}_FINISH_MARGIN_SECONDS" FINISH_MARGIN_SECONDS)"

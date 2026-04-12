@@ -16,7 +16,7 @@ NOTIFIER_SCRIPT="$PROJ/job_notifier.sh"
 MOUNT_REPAIR_SCRIPT="$PROJ/repair_mount.sh"
 RUN_OUT="$STATE_DIR/.relayctl.last.out"
 
-if [[ -z "${SLURM_JOB_NAME:-}" ]]; then
+if [[ -z "${SLURM_JOB_NAME:-}" || "${SLURM_JOB_NAME:-}" == "unknown" || "${SLURM_JOB_NAME:-}" == "Unknown" || "${SLURM_JOB_NAME:-}" == "UNKNOWN" ]]; then
   export SLURM_JOB_NAME="$JOB_NOTIFICATION_NAME"
 fi
 
