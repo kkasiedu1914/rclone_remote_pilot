@@ -209,6 +209,16 @@ The parameters below are the ones most users are likely to adjust. They can be g
 - `SYNC_EXCLUDES`
   Exclude filters for the mirror sync. By default `.remote-pilot/**` is excluded so runtime state is not mirrored.
 
+Users can override these before running `sync_mirror.sh`, for example:
+
+```bash
+export REMOTE_PILOT_PROJECT=demo_project
+export SYNC_INCLUDE_GLOBS="outputs/** checkpoints/** reports/** *.csv *.txt"
+export SYNC_EXCLUDES=".git/** .remote-pilot/** checkpoints/tmp/** *.tmp"
+export RCLONE_EXTRA_FLAGS="--fast-list --transfers=16 --checkers=16"
+bash rclone_remote_pilot/sync_mirror.sh
+```
+
 ### Supervisor And Notifications
 
 - `INTERVAL_SEC`
@@ -309,6 +319,16 @@ Use a different command filename for one session:
 export REMOTE_PILOT_PROJECT=demo_project
 export COMMAND_FILE_NAME=achenie.sh
 bash rclone_remote_pilot/relayctl.sh restart
+```
+
+Change mirror filters for one sync run:
+
+```bash
+export REMOTE_PILOT_PROJECT=demo_project
+export SYNC_INCLUDE_GLOBS="outputs/** artifacts/** *.csv *.parquet"
+export SYNC_EXCLUDES=".git/** .remote-pilot/** artifacts/tmp/**"
+export RCLONE_EXTRA_FLAGS="--fast-list --transfers=16 --checkers=16"
+bash rclone_remote_pilot/sync_mirror.sh
 ```
 
 ## Secrets Note
@@ -558,6 +578,58 @@ Recommended practice:
 - use `cmd.log` only for short status lines if you want a cleaner summary
 - send especially noisy or long-running processes to dedicated log files such as `train.stdout.log` or `outputs/train_worker.log`
 - keep custom logs inside the project directory if you want them to be picked up by `sync_mirror.sh`
+
+### 8b. Sending files to the remote machine
+
+There are two common patterns for moving files into the remote environment:
+
+- send small control files or helper scripts through the mounted command folder
+- send large datasets or model artifacts through a separate storage backend such as Google Cloud Storage
+
+Small-file example through the mounted command folder:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+cp configs/new_run.yaml "$COMMAND_CHANNEL_MOUNT/new_run.yaml"
+echo "uploaded new_run.yaml into command channel"
+```
+
+That pattern is fine for small helper files, notes, or configs. It is not the best choice for large datasets or large checkpoints.
+
+Large-file example using a separate bucket or remote:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Example only: configure the remote or bucket separately first.
+rclone copy outputs/checkpoint.pt gcs:my-remote-pilot-bucket/demo_project/
+```
+
+or, if your system provides `gsutil`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+gsutil cp outputs/checkpoint.pt gs://my-remote-pilot-bucket/demo_project/
+```
+
+Recommended rule:
+
+- use the mounted command folder for commands, small configs, and lightweight control artifacts
+- use `sync_mirror.sh` for routine project-result mirroring
+- use a bucket or separate object-storage remote for especially large files, datasets, or checkpoints
+
+The remote pilot system does not configure Google Cloud Storage automatically. If you want to use a GCS bucket, configure that separately on the remote machine with either:
+
+- an `rclone` remote such as `gcs:`
+- `gsutil`
+- another storage client available on your system
+
+Once configured, those commands can be called directly from `commands.sh` just like any other shell command.
 
 ### 9. Mirror outputs
 
