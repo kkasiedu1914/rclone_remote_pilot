@@ -33,6 +33,19 @@ ts() { date -Is; }
 log() { printf '[%s] %s\n' "$(ts)" "$*" >> "$RELAY_LOG_FILE"; }
 cmdlog() { printf '[%s] %s\n' "$(ts)" "$*" >> "$COMMAND_OUTPUT_LOG_FILE"; }
 
+reset_mountpoint_path() {
+  local mount_point="$1"
+  [[ -z "$mount_point" ]] && return 1
+
+  fusermount -uz "$mount_point" 2>/dev/null || true
+  umount -l "$mount_point" 2>/dev/null || true
+  rm -rf "$mount_point" 2>/dev/null || true
+  mkdir -p "$mount_point" 2>/dev/null || {
+    log "ERROR: failed to recreate mount path $mount_point"
+    return 1
+  }
+}
+
 ensure_exec() {
   find "$REMOTE_PILOT_HOME" -maxdepth 1 -type f -name '*.sh' -exec chmod +x {} + 2>/dev/null || true
 }
@@ -224,30 +237,27 @@ check_and_mount() {
   local -a root_folder_arg=()
   local -a cfg_arg=()
 
-  if [[ -n "$RCLONE_CONFIG" ]]; then
+  if [[ -n "${RCLONE_CONFIG:-}" ]]; then
     cfg_arg=(--config "$RCLONE_CONFIG")
   fi
   if [[ -n "$folder_id" ]]; then
     root_folder_arg=(--drive-root-folder-id "$folder_id")
   fi
 
-  if [[ -e "$mount_point" && ! -d "$mount_point" ]]; then
-    rm -rf "$mount_point" 2>/dev/null || true
+  if ! mkdir -p "$mount_point" 2>/dev/null; then
+    log "WARN: resetting unavailable mount path $mount_point"
+    reset_mountpoint_path "$mount_point" || return 1
   fi
 
-  if [[ -d "$mount_point" ]] && mountpoint -q "$mount_point" && ! mount_responsive "$mount_point"; then
+  if [[ -d "$mount_point" ]] && ! mount_responsive "$mount_point"; then
     log "WARN: clearing stale mount at $mount_point"
-    fusermount -uz "$mount_point" 2>/dev/null || true
-    umount -l "$mount_point" 2>/dev/null || true
-    rm -rf "$mount_point" 2>/dev/null || true
-    mkdir -p "$mount_point"
+    reset_mountpoint_path "$mount_point" || return 1
   fi
 
   if mountpoint -q "$mount_point"; then
     return 0
   fi
 
-  mkdir -p "$mount_point"
   rclone "${cfg_arg[@]}" mount "$remote" "$mount_point" \
     "${root_folder_arg[@]}" \
     --vfs-cache-mode writes \

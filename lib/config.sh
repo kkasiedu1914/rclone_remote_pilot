@@ -86,10 +86,17 @@ load_project_env() {
   export RCLONE_REMOTE="$(first_defined_value "" "${pref}_RCLONE_REMOTE" RCLONE_REMOTE OUT_REMOTE)"
   export MIRROR_REMOTE_SUBDIR="$(first_defined_value "$REMOTE_PILOT_PROJECT/$host_tag" "${pref}_MIRROR_REMOTE_SUBDIR" MIRROR_REMOTE_SUBDIR OUT_REMOTE_SUBDIR)"
 
-  export RCLONE_CONFIG="$(first_defined_value "" "${pref}_RCLONE_CONFIG" RCLONE_CONFIG)"
+  local rclone_config_value=""
+  rclone_config_value="$(first_defined_value "" "${pref}_RCLONE_CONFIG" RCLONE_CONFIG)"
+  if [[ -n "$rclone_config_value" ]]; then
+    export RCLONE_CONFIG="$rclone_config_value"
+  else
+    unset RCLONE_CONFIG
+  fi
   export RCLONE_EXTRA_FLAGS="$(first_defined_value "--fast-list --transfers=8 --checkers=8" "${pref}_RCLONE_EXTRA_FLAGS" RCLONE_EXTRA_FLAGS)"
 
   export SLEEP_SECS="$(first_defined_value "45" "${pref}_SLEEP_SECS" SLEEP_SECS)"
+  export INTERVAL_SEC="$(first_defined_value "1800" "${pref}_INTERVAL_SEC" INTERVAL_SEC)"
   export TTL_HOURS="$(first_defined_value "48" "${pref}_TTL_HOURS" TTL_HOURS)"
   export RUN_IN_BACKGROUND="$(first_defined_value "1" "${pref}_RUN_IN_BACKGROUND" RUN_IN_BACKGROUND)"
   export MAX_CONCURRENT="$(first_defined_value "1" "${pref}_MAX_CONCURRENT" MAX_CONCURRENT)"

@@ -35,6 +35,9 @@ try_unmount() {
     fi
   fi
 
+  fusermount -uz "$mount_point" 2>/dev/null || true
+  umount -l "$mount_point" 2>/dev/null || true
+
   if [[ -d "$mount_point" ]]; then
     rmdir "$mount_point" 2>/dev/null || true
   fi

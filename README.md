@@ -89,6 +89,29 @@ What the user should normally set:
 - `MIRROR_REMOTE_SUBDIR`
 - `NOTIFIER_PASSWORD_FILE`
 
+Useful tuning knobs that can now be set during `./configure.sh --project ...`:
+
+- `SLEEP_SECS`
+  Relay polling interval for checking command-file changes.
+- `INTERVAL_SEC`
+  Supervisor restart-check interval inside `job_supervisor.sh`.
+- `TTL_HOURS`
+  Maximum relay lifetime before clean exit.
+- `RUN_IN_BACKGROUND`
+  Whether commands execute asynchronously.
+- `MAX_CONCURRENT`
+  Maximum number of concurrent command runs.
+- `COMMAND_TIMEOUT_SECS`
+  Per-command timeout. `0` disables the timeout.
+- `COMMAND_TIMEOUT_KILL_GRACE_SECS`
+  Grace period before SIGKILL after timeout.
+- `PUBLISH_LOGS`
+  Whether logs are copied back to the shared command folder.
+- `EMAIL_ON_START`
+  Whether `job_supervisor.sh` auto-launches `job_notifier.sh`.
+- `FINISH_MARGIN_SECONDS`
+  Margin before walltime for cleanup / final handling.
+
 ## Secrets Note
 
 Do not commit the actual Gmail app password.
@@ -162,9 +185,27 @@ SMTP sender email for optional job notifications [arc.knust.job.notifier@gmail.c
 Primary notification recipient (required if using email): korantengkwabenaasiedu@gmail.com
 Secondary notification recipient [achenie@vt.edu]:
 Password file for SMTP app password [...]: /home/achenie/.secrets/notifier_gmail_app_password
+
+Advanced runtime tuning
+Relay poll interval in seconds [45]:
+Supervisor restart-check interval in seconds [1800]:
+Relay TTL in hours [48]:
+Run commands in background (1=yes, 0=no) [1]:
+Maximum concurrent command runs [1]:
+Command timeout in seconds (0 disables) [240]:
+Timeout kill grace in seconds [30]:
+Publish logs back to the command channel (1=yes, 0=no) [1]:
+Auto-start email notifier inside Slurm jobs (1=yes, 0=no) [1]:
+Seconds before walltime to stop relay / send final handling [60]:
 ```
 
 If you press Enter on a prompt with square brackets, that default is used.
+
+Examples:
+
+- set `SLEEP_SECS=5` if you want the relay to detect command changes much faster
+- keep `SLEEP_SECS=45` if lower polling overhead matters more than response speed
+- set `INTERVAL_SEC=300` if you want the Slurm supervisor to check the relay every 5 minutes instead of every 30 minutes
 
 This writes:
 

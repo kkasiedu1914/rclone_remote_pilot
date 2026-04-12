@@ -26,22 +26,35 @@ sync_outputs() {
   fi
 
   local -a cfg_arg=()
-  if [[ -n "$RCLONE_CONFIG" ]]; then
+  if [[ -n "${RCLONE_CONFIG:-}" ]]; then
     cfg_arg=(--config "$RCLONE_CONFIG")
+  fi
+  local -a extra_args=()
+  if [[ -n "${RCLONE_EXTRA_FLAGS:-}" ]]; then
+    local split_ifs="$IFS"
+    IFS=' '
+    read -r -a extra_args <<< "$RCLONE_EXTRA_FLAGS"
+    IFS="$split_ifs"
   fi
 
   local -a filter_args=()
   if [[ -n "$SYNC_EXCLUDES" ]]; then
-    # shellcheck disable=SC2206
-    local exclude_patterns=( $SYNC_EXCLUDES )
+    local split_ifs="$IFS"
+    local -a exclude_patterns=()
+    IFS=' '
+    read -r -a exclude_patterns <<< "$SYNC_EXCLUDES"
+    IFS="$split_ifs"
     local pattern=""
     for pattern in "${exclude_patterns[@]}"; do
       filter_args+=(--filter "- $pattern")
     done
   fi
   if [[ -n "$SYNC_INCLUDE_GLOBS" ]]; then
-    # shellcheck disable=SC2206
-    local include_patterns=( $SYNC_INCLUDE_GLOBS )
+    local split_ifs="$IFS"
+    local -a include_patterns=()
+    IFS=' '
+    read -r -a include_patterns <<< "$SYNC_INCLUDE_GLOBS"
+    IFS="$split_ifs"
     local pattern=""
     for pattern in "${include_patterns[@]}"; do
       filter_args+=(--filter "+ $pattern")
@@ -51,7 +64,6 @@ sync_outputs() {
   log "Ensuring remote directory exists: $dest"
   rclone "${cfg_arg[@]}" mkdir "$dest" \
     --drive-root-folder-id="$MIRROR_ROOT_FOLDER_ID" \
-    ${RCLONE_EXTRA_FLAGS} \
     >> "$SYNC_LOG_FILE" 2>&1 || log "WARN mkdir reported issues"
 
   log "Mirroring $SYNC_SOURCE_DIR -> $dest"
@@ -59,7 +71,7 @@ sync_outputs() {
     --drive-root-folder-id="$MIRROR_ROOT_FOLDER_ID" \
     --delete-excluded \
     --drive-skip-gdocs \
-    ${RCLONE_EXTRA_FLAGS} \
+    "${extra_args[@]}" \
     "${filter_args[@]}" >> "$SYNC_LOG_FILE" 2>&1 || log "WARN rclone sync reported issues"
 }
 
