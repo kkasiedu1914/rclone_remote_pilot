@@ -271,15 +271,15 @@ Each project instance gets:
 - its own mount point
 - its own runtime state directory
 
-## 13. Compatibility wrappers
+## 13. Legacy wrappers
 
-The old project-specific names still work, but they now forward to the generic scripts:
+Older project-specific wrappers and reference material now live under `legacy/`:
 
-- `start_kk_job.sh` -> `relayctl.sh`
-- `kkremote.sh` -> `job_supervisor.sh`
-- `gsync.sh` -> `sync_mirror.sh`
-- `fixer.sh` -> `repair_mount.sh`
-- `email.sh` -> `job_notifier.sh`
+- `legacy/start_kk_job.sh` -> `relayctl.sh`
+- `legacy/kkremote.sh` -> `job_supervisor.sh`
+- `legacy/gsync.sh` -> `sync_mirror.sh`
+- `legacy/fixer.sh` -> `repair_mount.sh`
+- `legacy/email.sh` -> `job_notifier.sh`
 
 ## 14. Troubleshooting
 

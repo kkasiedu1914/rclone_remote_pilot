@@ -39,13 +39,17 @@ It is designed for this workflow:
 - `repair_mount.sh`
   Cleans up a broken or stale mount.
 
-Compatibility wrappers are still available:
+Legacy wrappers and older reference material are now collected in `legacy/`:
 
-- `start_kk_job.sh`
-- `kkremote.sh`
-- `gsync.sh`
-- `fixer.sh`
-- `email.sh`
+- `legacy/start_kk_job.sh`
+- `legacy/kkremote.sh`
+- `legacy/gsync.sh`
+- `legacy/fixer.sh`
+- `legacy/email.sh`
+- `legacy/monitor_gpu_restart.sh`
+- `legacy/VT remote piloting system.md`
+
+For new use, prefer the top-level generic scripts only.
 
 ## Configuration Model
 
@@ -489,6 +493,72 @@ Expected behavior:
 - `pwd` prints the configured HPC project path
 - logs appear in the command-channel logs folder
 
+### 8a. `commands.sh` patterns
+
+The shared command file can be as simple or as detailed as you want. The relay only cares that it is an executable shell script. You can:
+
+- write everything to the standard `command-output.log`
+- also append your own summary lines to a small `cmd.log`
+- create separate log files for long-running background processes so the main command log stays readable
+
+Simple foreground example:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "starting quick diagnostic"
+hostname
+pwd
+python -V
+date -Is
+```
+
+Foreground example with a compact custom `cmd.log`:
+
+```bash
+#!/usr/bin/env bash
+set -u
+set +e
+set -o pipefail
+
+echo "Status: beginning training run $(date -Is)" >> cmd.log 2>&1
+cd /home/achenie/KNUST_Student_Projects/kkasiedu/remote_pilot_demo_project || exit 1
+
+python src/train.py configs/demo_config.json >> train.stdout.log 2>&1
+echo "Status: training finished $(date -Is)" >> cmd.log 2>&1
+
+cp -f cmd.log "$COMMAND_CHANNEL_MOUNT/logs/" 2>/dev/null || true
+```
+
+Background-process example with separate logs:
+
+```bash
+#!/usr/bin/env bash
+set -u
+set +e
+set -o pipefail
+
+echo "Status: launching background worker $(date -Is)" >> cmd.log 2>&1
+cd /home/achenie/KNUST_Student_Projects/kkasiedu/remote_pilot_demo_project || exit 1
+
+nohup python src/train.py configs/demo_config.json \
+  >> outputs/train_worker.log 2>&1 &
+
+worker_pid=$!
+echo "Status: worker pid=$worker_pid" >> cmd.log 2>&1
+echo "$worker_pid" > outputs/train_worker.pid
+
+cp -f cmd.log "$COMMAND_CHANNEL_MOUNT/logs/" 2>/dev/null || true
+```
+
+Recommended practice:
+
+- let the relay-managed `command-output.log` capture the full shell transcript
+- use `cmd.log` only for short status lines if you want a cleaner summary
+- send especially noisy or long-running processes to dedicated log files such as `train.stdout.log` or `outputs/train_worker.log`
+- keep custom logs inside the project directory if you want them to be picked up by `sync_mirror.sh`
+
 ### 9. Mirror outputs
 
 On HPC:
@@ -574,4 +644,4 @@ Run Slurm monitoring:
 ## Notes
 
 - `send_email.py` is the SMTP helper used by `job_notifier.sh`.
-- `monitor_gpu_restart.sh` is not required for the core relay workflow.
+- `legacy/monitor_gpu_restart.sh` is not required for the core relay workflow.
