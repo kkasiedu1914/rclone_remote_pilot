@@ -140,11 +140,19 @@ while (( stop_requested == 0 )); do
     fi
   else
     status="FAIL"
-    log "ERROR restart failed (showing last 50 lines)"
+    log "ERROR restart failed (relayctl output follows)"
+    log "ERROR relayctl command: bash $RELAY_CONTROL_SCRIPT restart"
+    log "ERROR mount target: $COMMAND_CHANNEL_MOUNT"
+    log "ERROR relay log path: $RELAY_LOG_FILE"
+    log "ERROR supervisor log path: $SUPERVISOR_LOG_FILE"
+    log "ERROR --- relayctl output begin ---"
     tail -n 50 "$RUN_OUT"
+    log "ERROR --- relayctl output end ---"
     rm -f "$RELAY_PID_FILE" "$RELAY_LOCK_FILE"
     find "$STATE_DIR" -type f -name '.commands.*.sh' -delete 2>/dev/null || true
     pkill -f '[r]elay.sh' 2>/dev/null || true
+    log "INFO running mount repair after failed restart"
+    run_mount_repair
   fi
 
   left_secs=""

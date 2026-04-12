@@ -12,6 +12,18 @@ log() {
   printf '[%s] %s\n' "$(date -Is)" "$*"
 }
 
+mount_ready() {
+  if mountpoint -q "$COMMAND_CHANNEL_MOUNT"; then
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 5s stat "$COMMAND_CHANNEL_MOUNT" >/dev/null 2>&1
+    else
+      stat "$COMMAND_CHANNEL_MOUNT" >/dev/null 2>&1
+    fi
+  else
+    return 1
+  fi
+}
+
 try_unmount() {
   local mount_point="$1"
   [[ -z "$mount_point" ]] && return 0
@@ -93,14 +105,29 @@ start_relay() {
   local relay_pid=$!
   echo "$relay_pid" > "$RELAY_PID_FILE"
 
+  local waited=0
+  local start_timeout=20
+  while (( waited < start_timeout )); do
+    if ! kill -0 "$relay_pid" 2>/dev/null; then
+      echo "relay failed to start; see $RELAY_LOG_FILE" >&2
+      tail -n 50 "$RELAY_LOG_FILE" 2>/dev/null || true
+      exit 1
+    fi
+    if mount_ready; then
+      log "relay started (PID $relay_pid)"
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  echo "relay failed to become ready within ${start_timeout}s; see $RELAY_LOG_FILE" >&2
+  kill "$relay_pid" 2>/dev/null || true
   sleep 1
-  if kill -0 "$relay_pid" 2>/dev/null; then
-    log "relay started (PID $relay_pid)"
-  else
-    echo "relay failed to start; see $RELAY_LOG_FILE" >&2
-    tail -n 50 "$RELAY_LOG_FILE" 2>/dev/null || true
-    exit 1
-  fi
+  kill -9 "$relay_pid" 2>/dev/null || true
+  rm -f "$RELAY_PID_FILE" "$RELAY_LOCK_FILE"
+  tail -n 50 "$RELAY_LOG_FILE" 2>/dev/null || true
+  exit 1
 }
 
 status_relay() {

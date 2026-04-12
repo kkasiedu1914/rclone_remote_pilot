@@ -56,6 +56,13 @@ Configuration is layered:
 - optional machine-only overrides in `projects/<project-name>.local.env`
 - optional tagged shell variables such as `PROJECT_A_PROJECT_DIR=...`
 
+Later layers win over earlier ones. In practice:
+
+1. `.env`
+2. `projects/<project>.env`
+3. `projects/<project>.local.env`
+4. shell exports in the current session
+
 The active project instance is selected with:
 
 ```bash
@@ -66,6 +73,16 @@ Create or update that project instance with:
 
 ```bash
 ./configure.sh --project my_project
+```
+
+This means a user can keep committed project defaults in git, but still override selected values on the HPC before launch, for example:
+
+```bash
+export REMOTE_PILOT_PROJECT=my_project
+export SLEEP_SECS=5
+export INTERVAL_SEC=60
+export RUN_IN_BACKGROUND=0
+bash rclone_remote_pilot/relayctl.sh start
 ```
 
 ## KNUST / ARC Defaults
@@ -111,6 +128,184 @@ Useful tuning knobs that can now be set during `./configure.sh --project ...`:
   Whether `job_supervisor.sh` auto-launches `job_notifier.sh`.
 - `FINISH_MARGIN_SECONDS`
   Margin before walltime for cleanup / final handling.
+
+## Configurable Parameters
+
+The parameters below are the ones most users are likely to adjust. They can be grouped into:
+
+- project identity and paths
+- command-channel behavior
+- relay runtime behavior
+- mirroring behavior
+- notifications and reporting
+
+### Project Identity And Paths
+
+- `PROJECT_NAME`
+  Active project label. Usually matches `REMOTE_PILOT_PROJECT`.
+- `PROJECT_DIR`
+  Main project directory on the remote system. Commands run from here by default.
+- `PROJECT_INSTANCE_ROOT`
+  Per-project runtime root. Defaults to `PROJECT_DIR/.remote-pilot/<project>`.
+- `LOG_DIR`
+  Local authoritative log directory.
+- `STATE_DIR`
+  Local runtime state directory.
+
+### Command Channel
+
+- `REMOTE_ACCESS_EMAIL`
+  Drive account that should be granted access to the shared command and mirror folders.
+- `RCLONE_REMOTE`
+  The configured `rclone` remote name, such as `gdrive:` or `gdriveN:`.
+- `RCLONE_CONFIG`
+  Optional explicit path to an `rclone` config file. Leave unset to use the normal `rclone` config discovery path.
+- `COMMAND_CHANNEL_FOLDER_ID`
+  Google Drive folder ID for the shared command folder.
+- `COMMAND_CHANNEL_MOUNT`
+  Local mount path for that shared command folder.
+- `COMMAND_FILE_NAME`
+  File the relay watches inside the mounted command folder. Default is `commands.sh`.
+- `COMMAND_CHANNEL_LOG_SUBDIR`
+  Subdirectory under the mounted command folder where published logs go. Default is `logs`.
+- `COMMAND_CHANNEL_LOG_DIR`
+  Full publish destination for relay and supervisor logs. Defaults to `COMMAND_CHANNEL_MOUNT/logs`.
+
+### Relay Runtime
+
+- `SLEEP_SECS`
+  Poll interval for command-file changes.
+- `TTL_HOURS`
+  Maximum lifetime of a relay process before it exits cleanly.
+- `RUN_IN_BACKGROUND`
+  If `1`, commands start in the background immediately. If `0`, commands start in the foreground first.
+- `MAX_CONCURRENT`
+  Maximum simultaneous command executions.
+- `COMMAND_TIMEOUT_SECS`
+  Foreground timeout for a command run. `0` disables the timeout.
+- `COMMAND_TIMEOUT_KILL_GRACE_SECS`
+  Grace period before SIGKILL after a timeout.
+- `TIMEOUT_REQUEUE_TO_BG`
+  If `1`, a timed-out foreground command is relaunched in the background.
+- `PUBLISH_LOGS`
+  If `1`, the relay republishes local log files into the mounted command folder.
+
+### Mirror Behavior
+
+- `MIRROR_ROOT_FOLDER_ID`
+  Google Drive folder ID that acts as the root of the mirror destination.
+- `MIRROR_REMOTE_SUBDIR`
+  Project-specific subdirectory under the mirror root.
+- `SYNC_SOURCE_DIR`
+  Local source directory mirrored to Drive. Defaults to `PROJECT_DIR`.
+- `RCLONE_EXTRA_FLAGS`
+  Extra `rclone` transfer flags, such as `--fast-list --transfers=8 --checkers=8`.
+- `SYNC_INCLUDE_GLOBS`
+  Include filters for the mirror sync.
+- `SYNC_EXCLUDES`
+  Exclude filters for the mirror sync. By default `.remote-pilot/**` is excluded so runtime state is not mirrored.
+
+### Supervisor And Notifications
+
+- `INTERVAL_SEC`
+  How often `job_supervisor.sh` performs a restart/health-check cycle.
+- `SMTP_USER`
+  Sender account for notifications.
+- `NOTIFIER_PASSWORD_FILE`
+  Path to the Gmail app-password file on the remote machine.
+- `NOTIFICATION_TO_PRIMARY`
+  Main recipient for job notifications.
+- `NOTIFICATION_TO_SECONDARY`
+  Secondary recipient. Default is `achenie@vt.edu`.
+- `JOB_NOTIFICATION_NAME`
+  Fallback Slurm job name used when `SLURM_JOB_NAME` is unset.
+- `EMAIL_ON_START`
+  If `1`, the supervisor launches the notifier once per job.
+- `MAIL_LOG_FILES`
+  Space-separated list of files whose tails are attached in start/finish notification emails.
+- `FINISH_MARGIN_SECONDS`
+  Time-before-walltime margin for final cleanup behavior.
+- `SLURM_TIME_TZ`
+  Time zone assumed when parsing Slurm timestamps.
+- `REPORT_TZ_ET`
+  Time zone used for the "ET" section in emails.
+- `REPORT_TZ_GMT`
+  Time zone used for the "GMT" section in emails.
+
+### Legacy Compatibility Aliases
+
+The loader still supports several old variable names for compatibility:
+
+- `MOUNT_IN_DIR`
+- `MOUNT_FOLD_ID`
+- `SYNC_OUT_DIR`
+- `OUT_REMOTE`
+- `OUT_REMOTE_SUBDIR`
+- `PUBLISH_LOGS_DIR`
+- `CMD_LOG_FILE`
+
+For new setups, prefer the newer names documented above. Old aliases can make debugging harder if both styles appear in the same config.
+
+## When Changes Take Effect
+
+Some settings are read only when a script starts, while others matter only for new supervisor or relay launches.
+
+- Requires relay restart:
+  `COMMAND_CHANNEL_MOUNT`, `COMMAND_FILE_NAME`, `COMMAND_CHANNEL_LOG_DIR`, `SLEEP_SECS`, `RUN_IN_BACKGROUND`, `MAX_CONCURRENT`, `COMMAND_TIMEOUT_SECS`, `COMMAND_TIMEOUT_KILL_GRACE_SECS`, `PUBLISH_LOGS`, `RCLONE_REMOTE`, `RCLONE_CONFIG`
+- Requires rerunning `sync_mirror.sh`:
+  `SYNC_SOURCE_DIR`, `MIRROR_ROOT_FOLDER_ID`, `MIRROR_REMOTE_SUBDIR`, `SYNC_INCLUDE_GLOBS`, `SYNC_EXCLUDES`, `RCLONE_EXTRA_FLAGS`
+- Requires relaunching `job_supervisor.sh`:
+  `INTERVAL_SEC`, `EMAIL_ON_START`, `FINISH_MARGIN_SECONDS`, `JOB_NOTIFICATION_NAME`, `MAIL_LOG_FILES`
+- Requires relaunching `job_notifier.sh` or a new Slurm job:
+  `SMTP_USER`, `NOTIFIER_PASSWORD_FILE`, `NOTIFICATION_TO_PRIMARY`, `NOTIFICATION_TO_SECONDARY`, `SLURM_TIME_TZ`, `REPORT_TZ_ET`, `REPORT_TZ_GMT`
+
+In short: after changing runtime shell exports, restart the relay or supervisor so the new values are loaded cleanly.
+
+## Common Session Overrides
+
+These are useful when the user wants temporary behavior changes on the HPC without editing the committed project config:
+
+Fast command turnaround:
+
+```bash
+export REMOTE_PILOT_PROJECT=demo_project
+export SLEEP_SECS=5
+bash rclone_remote_pilot/relayctl.sh restart
+```
+
+Foreground-first execution with timeout fallback:
+
+```bash
+export REMOTE_PILOT_PROJECT=demo_project
+export RUN_IN_BACKGROUND=0
+export COMMAND_TIMEOUT_SECS=240
+export TIMEOUT_REQUEUE_TO_BG=1
+bash rclone_remote_pilot/relayctl.sh restart
+```
+
+Frequent supervisor checks during debugging:
+
+```bash
+export REMOTE_PILOT_PROJECT=demo_project
+export INTERVAL_SEC=60
+bash rclone_remote_pilot/job_supervisor.sh
+```
+
+Disable published logs temporarily:
+
+```bash
+export REMOTE_PILOT_PROJECT=demo_project
+export PUBLISH_LOGS=0
+bash rclone_remote_pilot/relayctl.sh restart
+```
+
+Use a different command filename for one session:
+
+```bash
+export REMOTE_PILOT_PROJECT=demo_project
+export COMMAND_FILE_NAME=achenie.sh
+bash rclone_remote_pilot/relayctl.sh restart
+```
 
 ## Secrets Note
 
