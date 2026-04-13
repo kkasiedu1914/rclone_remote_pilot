@@ -2,6 +2,12 @@
 
 `rclone_remote_pilot` is a command relay for running work on a remote Linux or HPC project through a shared Google Drive folder.
 
+Reference docs live in `docs/`:
+
+- `docs/architecture.md`
+- `docs/config-reference.md`
+- `docs/operations.md`
+
 It is designed for this workflow:
 
 1. The user configures the pilot locally with the HPC paths in mind.
