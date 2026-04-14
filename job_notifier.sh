@@ -32,14 +32,21 @@ email_on_err() {
   return "$exit_code"
 }
 trap email_on_err ERR
+join_by() {
+  local sep="$1"
+  shift
+  local out=""
+  local item=""
+  for item in "$@"; do
+    if [[ -n "$out" ]]; then
+      out+="$sep"
+    fi
+    out+="$item"
+  done
+  printf '%s' "$out"
+}
 
-if [[ -z "${SLURM_JOB_ID:-}" ]]; then
-  email_log_event "FAIL_START" "missing=SLURM_JOB_ID"
-  echo "This script must run inside a Slurm job" >&2
-  exit 1
-fi
-
-JOB_ID="$SLURM_JOB_ID"
+JOB_ID="${SLURM_JOB_ID:-unknown}"
 JOB_NAME="${SLURM_JOB_NAME:-unknown}"
 if [[ -z "$JOB_NAME" || "$JOB_NAME" == "unknown" || "$JOB_NAME" == "Unknown" || "$JOB_NAME" == "UNKNOWN" ]]; then
   JOB_NAME="$PROJECT_NAME"
@@ -47,26 +54,35 @@ fi
 HOST="$(hostname)"
 WORKDIR="$(pwd)"
 
-if [[ -z "${SMTP_USER:-}" ]]; then
-  email_log_event "FAIL_START" "missing=SMTP_USER"
-  echo "Set SMTP_USER in .env or your shell" >&2
-  exit 1
-fi
-if [[ -z "${SMTP_PASS:-}" ]]; then
-  email_log_event "FAIL_START" "missing=SMTP_PASS"
-  echo "Set SMTP_PASS or provide NOTIFIER_PASSWORD_FILE" >&2
-  exit 1
+mapfile -t recipients < <(join_notification_recipients)
+
+STARTUP_NOTE=""
+if [[ -z "${SLURM_JOB_ID:-}" ]]; then
+  STARTUP_NOTE="missing_optional=SLURM_JOB_ID"
 fi
 
-mapfile -t recipients < <(join_notification_recipients)
+declare -a startup_missing=()
+if [[ -z "${SMTP_USER:-}" ]]; then
+  startup_missing+=("SMTP_USER")
+fi
+if [[ -z "${SMTP_PASS:-}" ]]; then
+  startup_missing+=("SMTP_PASS_or_NOTIFIER_PASSWORD_FILE")
+fi
 if (( ${#recipients[@]} == 0 )); then
-  email_log_event "FAIL_START" "missing=notification_recipients"
-  echo "Set NOTIFICATION_TO_PRIMARY and optionally NOTIFICATION_TO_SECONDARY" >&2
+  startup_missing+=("notification_recipients")
+fi
+if (( ${#startup_missing[@]} > 0 )); then
+  startup_detail="missing_required=$(join_by "," "${startup_missing[@]}")"
+  if [[ -n "$STARTUP_NOTE" ]]; then
+    startup_detail="$STARTUP_NOTE; $startup_detail"
+  fi
+  email_log_event "FAIL_START" "$startup_detail"
+  echo "job_notifier.sh cannot start: $startup_detail" >&2
   exit 1
 fi
 
 EMAIL_START_OK=1
-email_log_event "START_OK"
+email_log_event "START_OK" "$STARTUP_NOTE"
 
 LOCKFILE="${EMAIL_LOCKFILE:-$STATE_DIR/.job_notifier.lock.${JOB_ID}}"
 exec 9>"$LOCKFILE"
@@ -137,6 +153,10 @@ get_slurm_times() {
   SLURM_TIMELEFT="unknown"
   SLURM_END_EST="unknown"
 
+  if is_unknown "$JOB_ID"; then
+    return
+  fi
+
   local info=""
   if info=$(squeue -j "$JOB_ID" -h -o "%S|%e|%l|%L" 2>/dev/null) && [[ -n "$info" ]]; then
     IFS='|' read -r squeue_start squeue_end squeue_limit squeue_left <<< "$info"
@@ -177,6 +197,11 @@ get_slurm_times() {
 }
 
 get_final_state() {
+  if is_unknown "$JOB_ID"; then
+    echo "UNAVAILABLE"
+    return
+  fi
+
   local tries=0
   local state=""
   while (( tries < 60 )); do
@@ -211,29 +236,48 @@ send_mail() {
   end_et="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_ET")"
   end_gmt="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_GMT")"
 
-  local subject="[Remote Pilot $JOB_ID] $status $icon"
+  local subject="[Remote Pilot] $status $icon"
+  if ! is_unknown "$JOB_ID"; then
+    subject="[Remote Pilot $JOB_ID] $status $icon"
+  fi
+
   local body=""
-  body=$(cat <<EOF
-Status:          $status
-Job ID:          $JOB_ID
-Job name:        $JOB_NAME
-Host:            $HOST
-Workdir:         $WORKDIR
-
-Current time (ET):       $now_et
-Current time (GMT):      $now_gmt
-Slurm TZ assumed:        $SLURM_TIME_TZ
-
-Nominal start (ET):      $start_et
-Nominal start (GMT):     $start_gmt
-Time limit (walltime):   $SLURM_TIMELIMIT
-Expected end (ET):       $end_et
-Expected end (GMT):      $end_gmt
-Time left (per Slurm):   $SLURM_TIMELEFT
-
-This job is running on a remote resource.
-EOF
-)
+  body+="Status:          $status"$'\n'
+  if ! is_unknown "$JOB_ID"; then
+    body+="Job ID:          $JOB_ID"$'\n'
+  fi
+  if ! is_unknown "$JOB_NAME"; then
+    body+="Job name:        $JOB_NAME"$'\n'
+  fi
+  body+="Host:            $HOST"$'\n'
+  body+="Workdir:         $WORKDIR"$'\n'
+  body+=$'\n'
+  body+="Current time (ET):       $now_et"$'\n'
+  body+="Current time (GMT):      $now_gmt"$'\n'
+  body+="Slurm TZ assumed:        $SLURM_TIME_TZ"$'\n'
+  if is_unknown "$JOB_ID"; then
+    body+=$'\n'
+    body+="Slurm metadata note: SLURM_JOB_ID was not present in the environment."$'\n'
+    body+="Slurm-specific timing and final-state details are unavailable for this run."$'\n'
+  else
+    body+=$'\n'
+    if ! is_unknown "$SLURM_START"; then
+      body+="Nominal start (ET):      $start_et"$'\n'
+      body+="Nominal start (GMT):     $start_gmt"$'\n'
+    fi
+    if ! is_unknown "$SLURM_TIMELIMIT"; then
+      body+="Time limit (walltime):   $SLURM_TIMELIMIT"$'\n'
+    fi
+    if ! is_unknown "$SLURM_END_EST"; then
+      body+="Expected end (ET):       $end_et"$'\n'
+      body+="Expected end (GMT):      $end_gmt"$'\n'
+    fi
+    if ! is_unknown "$SLURM_TIMELEFT"; then
+      body+="Time left (per Slurm):   $SLURM_TIMELEFT"$'\n'
+    fi
+  fi
+  body+=$'\n'
+  body+="This job is running on a remote resource."$'\n'
 
   case "$status" in
     STARTED*)
@@ -276,12 +320,10 @@ EOF
   local resolved_file=""
   for file in "${files[@]}"; do
     resolved_file="$(resolve_mail_log_file "$file")"
-    body+=$'\n------------------------------\n'
-    body+="Tail of log file: $resolved_file"$'\n'
     if [[ -f "$resolved_file" ]]; then
+      body+=$'\n------------------------------\n'
+      body+="Tail of log file: $resolved_file"$'\n'
       body+="$(tail -n 40 "$resolved_file")"$'\n'
-    else
-      body+="(file not found)"$'\n'
     fi
   done
 
@@ -296,6 +338,10 @@ EOF
 
 main() {
   send_mail "STARTED"
+  if is_unknown "$JOB_ID"; then
+    email_log_event "FOLLOWUP_SKIPPED" "missing_optional=SLURM_JOB_ID"
+    return 0
+  fi
   get_slurm_times
 
   local left_secs=0
