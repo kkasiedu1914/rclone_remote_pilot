@@ -108,6 +108,8 @@ prompt_value PROJECT_DIR_VALUE "Main project directory on the remote system" "$d
 prompt_value COMMAND_CHANNEL_FOLDER_ID_VALUE "Google Drive folder ID for the shared command channel" "$COMMAND_CHANNEL_FOLDER_ID"
 prompt_value MIRROR_ROOT_FOLDER_ID_VALUE "Google Drive folder ID for the shared mirror root" "$MIRROR_ROOT_FOLDER_ID"
 prompt_value COMMAND_CHANNEL_MOUNT_VALUE "Local mount point for the command channel" "$default_mount"
+echo "Requirement: create ${COMMAND_FILE_NAME:-commands.sh} in the shared Google Drive command folder yourself."
+echo "The relay will not create it. Missing or stale mounted command files can lead to cached mount issues."
 prompt_value COMMAND_FILE_NAME_VALUE "Command file name to watch" "${COMMAND_FILE_NAME:-commands.sh}"
 prompt_value MIRROR_REMOTE_SUBDIR_VALUE "Mirror subdirectory name for this machine" "$default_mirror_subdir"
 prompt_value SMTP_USER_VALUE "SMTP sender email for optional job notifications" "${SMTP_USER:-arc.knust.job.notifier@gmail.com}"
@@ -177,14 +179,18 @@ Note:
 - configure.sh does not create the remote HPC project or mount directories.
 - Those paths are stored as configuration only.
 - The runtime scripts create writable runtime directories on the machine where the relay actually runs.
+- You must create the shared Drive command file yourself as ${COMMAND_FILE_NAME_VALUE}.
+- The relay will not auto-create the command file.
 
 Next steps:
 1. Select the project instance:
    export REMOTE_PILOT_PROJECT=$TARGET_PROJECT
 2. Confirm your rclone remote can see the shared folders:
    rclone lsd ${RCLONE_REMOTE_VALUE}
-3. Start the relay:
+3. In the shared Google Drive command folder, create:
+   ${COMMAND_FILE_NAME_VALUE}
+4. Start the relay:
    ./relayctl.sh start
-4. Mirror project outputs back to Drive when needed:
+5. Mirror project outputs back to Drive when needed:
    ./sync_mirror.sh
 EOF

@@ -21,7 +21,7 @@ It is designed for this workflow:
 
 - mounts a shared Google Drive command folder with `rclone mount`
 - watches a configurable command file such as `commands.sh`
-- auto-creates that watched command file if it is missing
+- expects the watched command file to already exist in the shared Drive folder
 - runs command scripts from the configured `PROJECT_DIR`
 - republishes logs back into the shared command folder
 - mirrors project outputs to a separate shared Drive folder
@@ -502,15 +502,15 @@ When the relay starts:
 - runtime directories are created under:
   `<PROJECT_DIR>/.remote-pilot/demo_project/`
 - the command channel mount directory is created if needed
-- the watched command file is created if it does not already exist
+- the watched command file must already exist in the shared Drive folder
 
-For this example, that means the relay will ensure:
+For this example, that means the relay expects:
 
 ```text
 /home/achenie/KNUST_Student_Projects/kkasiedu/commands-channel/commands.sh
 ```
 
-exists, even if it starts empty.
+to already exist in Google Drive before the relay starts.
 
 ### 8. User sends a test command
 
@@ -737,3 +737,5 @@ Run Slurm monitoring:
 
 - `send_email.py` is the SMTP helper used by `job_notifier.sh`.
 - `legacy/monitor_gpu_restart.sh` is not required for the core relay workflow.
+- `commands.sh` must be created from the shared Drive side. The relay no longer creates it locally.
+- If the mounted command folder diverges from Drive state, stop the relay, run `./repair_mount.sh`, clear `.remote-pilot/<project>/state/rclone-cache`, and then restart.

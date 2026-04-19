@@ -161,7 +161,7 @@ What happens:
 1. The active project is selected from `REMOTE_PILOT_PROJECT`.
 2. The relay loads that project’s config file.
 3. The relay mounts the shared command channel if needed.
-4. It watches `commands.sh`.
+4. It expects `commands.sh` to already exist in the shared Drive folder.
 5. When `commands.sh` changes, it copies a snapshot locally and runs it from `PROJECT_DIR`.
 6. It republishes logs to `command-channel/logs/`.
 
@@ -301,3 +301,12 @@ If mirroring fails:
 1. Confirm `MIRROR_ROOT_FOLDER_ID` is correct
 2. Confirm the Drive account behind `RCLONE_REMOTE` can write there
 3. Check the per-project sync log under `.remote-pilot/<project>/logs/`
+
+If the mounted command folder differs from the actual Drive folder contents:
+
+1. Stop `job_supervisor.sh`, `job_notifier.sh`, and `relay.sh`
+2. Run `./relayctl.sh stop || true`
+3. Run `./repair_mount.sh`
+4. Clear `.remote-pilot/<project>/state/rclone-cache`
+5. Restart the relay or supervisor
+6. If the remote checkout still behaves inconsistently, clear that remote project copy or pull a fresh copy of `rclone_remote_pilot` and rebuild the per-project state

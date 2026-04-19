@@ -72,6 +72,22 @@ pkill -f 'relay.sh' || true
 ./relayctl.sh start
 ```
 
+If the mounted command folder still disagrees with Google Drive after repair:
+
+```bash
+cd rclone_remote_pilot
+export REMOTE_PILOT_PROJECT=demo_project
+pkill -f 'job_supervisor.sh' || true
+pkill -f 'job_notifier.sh' || true
+pkill -f 'relay.sh' || true
+./relayctl.sh stop || true
+./repair_mount.sh || true
+rm -rf ".remote-pilot/${REMOTE_PILOT_PROJECT}/state/rclone-cache"
+mkdir -p ".remote-pilot/${REMOTE_PILOT_PROJECT}/state/rclone-cache"
+```
+
+At that point, restart the relay only after confirming `commands.sh` already exists in the shared Drive folder.
+
 ## Command File
 
 The relay watches:
@@ -80,7 +96,7 @@ The relay watches:
 $COMMAND_CHANNEL_MOUNT/$COMMAND_FILE_NAME
 ```
 
-The relay auto-creates that file if it is missing.
+That file must already exist in the shared Drive folder. The relay does not create it.
 
 Example:
 
