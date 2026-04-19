@@ -1,4 +1,0 @@
-[2026-04-19T15:22:59+00:00] START Job supervisor
-[2026-04-19T15:22:59+00:00] INFO Working directory: /home/kkasiedu/projects/remote_pilot_demo_project/rclone_remote_pilot
-[2026-04-19T15:23:00+00:00] HB iter=1 restart=OK next_check_in=600s
-[2026-04-19T15:33:00+00:00] HB iter=2 restart=OK next_check_in=600s
