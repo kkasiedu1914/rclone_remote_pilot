@@ -1,29 +1,32 @@
 # Operations
 
+Run these runtime commands from inside the `rclone_remote_pilot` directory. Do not launch them from the parent project directory with `bash rclone_remote_pilot/...`, because the pilot expects its supporting files relative to its own directory.
+
 ## Startup
 
 Select a project:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 ```
 
 Start the relay:
 
 ```bash
-bash rclone_remote_pilot/relayctl.sh start
+./relayctl.sh start
 ```
 
 Check status:
 
 ```bash
-bash rclone_remote_pilot/relayctl.sh status
+./relayctl.sh status
 ```
 
 Stop:
 
 ```bash
-bash rclone_remote_pilot/relayctl.sh stop
+./relayctl.sh stop
 ```
 
 ## Supervisor
@@ -31,17 +34,19 @@ bash rclone_remote_pilot/relayctl.sh stop
 Launch the supervisor:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
-bash rclone_remote_pilot/job_supervisor.sh
+./job_supervisor.sh
 ```
 
 Stop it:
 
 ```bash
+cd rclone_remote_pilot
 pkill -f 'job_supervisor.sh' || true
 pkill -f 'job_notifier.sh' || true
 export REMOTE_PILOT_PROJECT=demo_project
-bash rclone_remote_pilot/relayctl.sh stop || true
+./relayctl.sh stop || true
 ```
 
 ## Mount Repair
@@ -49,20 +54,22 @@ bash rclone_remote_pilot/relayctl.sh stop || true
 Force-reset a stale mount path:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
-bash rclone_remote_pilot/repair_mount.sh
+./repair_mount.sh
 ```
 
 Recommended recovery sequence after repeated mount failures:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 pkill -f 'job_supervisor.sh' || true
 pkill -f 'job_notifier.sh' || true
 pkill -f 'relay.sh' || true
-bash rclone_remote_pilot/relayctl.sh stop || true
-bash rclone_remote_pilot/repair_mount.sh || true
-bash rclone_remote_pilot/relayctl.sh start
+./relayctl.sh stop || true
+./repair_mount.sh || true
+./relayctl.sh start
 ```
 
 ## Command File
@@ -160,18 +167,20 @@ If `SLURM_JOB_NAME` is unset or unknown, the notifier falls back to `PROJECT_NAM
 Run a normal mirror:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
-bash rclone_remote_pilot/sync_mirror.sh
+./sync_mirror.sh
 ```
 
 Override filters for one run:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export SYNC_INCLUDE_GLOBS="outputs/** checkpoints/** reports/** *.csv *.txt"
 export SYNC_EXCLUDES=".git/** .remote-pilot/** checkpoints/tmp/** *.tmp"
 export RCLONE_EXTRA_FLAGS="--fast-list --transfers=16 --checkers=16"
-bash rclone_remote_pilot/sync_mirror.sh
+./sync_mirror.sh
 ```
 
 ## File Transfer Patterns
