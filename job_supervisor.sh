@@ -130,12 +130,7 @@ while (( stop_requested == 0 )); do
     status="OK"
     if [[ "$EMAIL_ON_START" == "1" && ! -f "$EMAIL_SENTINEL_FILE" ]]; then
       if [[ -x "$NOTIFIER_SCRIPT" ]]; then
-        (
-          bash "$NOTIFIER_SCRIPT" || {
-            rc=$?
-            log "WARN job_notifier.sh exited non-zero (exit_code=$rc); see $EMAIL_LOG_FILE for details"
-          }
-        ) &
+        (bash "$NOTIFIER_SCRIPT" >/dev/null 2>&1 || log "WARN job_notifier.sh exited non-zero") &
         touch "$EMAIL_SENTINEL_FILE" 2>/dev/null || true
         log "INFO job_notifier.sh launched once; sentinel=$EMAIL_SENTINEL_FILE"
       elif (( email_missing_warned == 0 )); then
