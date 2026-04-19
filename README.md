@@ -57,6 +57,12 @@ Legacy wrappers and older reference material are in `legacy/`:
 
 For new use, prefer the top-level generic scripts only.
 
+## Runtime Working Directory
+
+Run the runtime scripts from inside the `rclone_remote_pilot` directory.
+
+The project repository itself may live in a parent directory, but commands such as `relayctl.sh`, `job_supervisor.sh`, and `sync_mirror.sh` should not be launched from that parent with paths like `bash rclone_remote_pilot/relayctl.sh ...`. Those launches can fail because supporting files are resolved relative to the pilot directory.
+
 ## Configuration Model
 
 Configuration is layered:
@@ -88,11 +94,12 @@ Create or update that project instance with:
 This means a user can keep committed project defaults in git, but still override selected values on the HPC before launch, for example:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=my_project
 export SLEEP_SECS=5
 export INTERVAL_SEC=60
 export RUN_IN_BACKGROUND=0
-bash rclone_remote_pilot/relayctl.sh start
+./relayctl.sh start
 ```
 
 ## KNUST / ARC Defaults
@@ -218,11 +225,12 @@ The parameters below are the ones most users are likely to adjust. They can be g
 Users can override these before running `sync_mirror.sh`, for example:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export SYNC_INCLUDE_GLOBS="outputs/** checkpoints/** reports/** *.csv *.txt"
 export SYNC_EXCLUDES=".git/** .remote-pilot/** checkpoints/tmp/** *.tmp"
 export RCLONE_EXTRA_FLAGS="--fast-list --transfers=16 --checkers=16"
-bash rclone_remote_pilot/sync_mirror.sh
+./sync_mirror.sh
 ```
 
 ### Supervisor And Notifications
@@ -288,53 +296,59 @@ These are useful when the user wants temporary behavior changes on the HPC witho
 Fast command turnaround:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export SLEEP_SECS=5
-bash rclone_remote_pilot/relayctl.sh restart
+./relayctl.sh restart
 ```
 
 Foreground-first execution with timeout fallback:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export RUN_IN_BACKGROUND=0
 export COMMAND_TIMEOUT_SECS=240
 export TIMEOUT_REQUEUE_TO_BG=1
-bash rclone_remote_pilot/relayctl.sh restart
+./relayctl.sh restart
 ```
 
 Frequent supervisor checks during debugging:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export INTERVAL_SEC=60
-bash rclone_remote_pilot/job_supervisor.sh
+./job_supervisor.sh
 ```
 
 Disable published logs temporarily:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export PUBLISH_LOGS=0
-bash rclone_remote_pilot/relayctl.sh restart
+./relayctl.sh restart
 ```
 
 Use a different command filename for one session:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export COMMAND_FILE_NAME=achenie.sh
-bash rclone_remote_pilot/relayctl.sh restart
+./relayctl.sh restart
 ```
 
 Change mirror filters for one sync run:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export SYNC_INCLUDE_GLOBS="outputs/** artifacts/** *.csv *.parquet"
 export SYNC_EXCLUDES=".git/** .remote-pilot/** artifacts/tmp/**"
 export RCLONE_EXTRA_FLAGS="--fast-list --transfers=16 --checkers=16"
-bash rclone_remote_pilot/sync_mirror.sh
+./sync_mirror.sh
 ```
 
 ## Secrets Note
