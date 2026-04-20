@@ -167,8 +167,8 @@ Important relay behavior:
 
 The notifier sends:
 
-- STARTED
-- FINISHED with final Slurm state
+- STARTED and FINISHED with final Slurm state when running inside Slurm
+- a single STARTED-style project summary when Slurm is not detected
 
 Default tailed files in the email body:
 
@@ -177,6 +177,7 @@ Default tailed files in the email body:
 - `SUPERVISOR_LOG_FILE`
 
 If `SLURM_JOB_NAME` is unset or unknown, the notifier falls back to `PROJECT_NAME`.
+If the Slurm stdout file or other configured log files are unavailable, they are omitted from the email body instead of being listed as missing.
 
 ## Mirroring
 

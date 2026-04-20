@@ -91,8 +91,24 @@ projects/my_project.local.env
 
 That local override file stays ignored by git.
 
+`configure.sh` supports three project configuration depths:
+
+- `basic`
+  Prompts only through `Password file for SMTP app password [...]` and writes the core project settings.
+- `advanced`
+  Prompts for the core settings plus the normal runtime tuning block. This is the default.
+- `advanced-all`
+  Prompts for the core settings, the normal runtime tuning block, and all explicit runtime overrides including logs, cache, state, and reporting paths.
+
 Important prompts:
 
+- `Configuration depth (basic|advanced|advanced-all)`
+  - `basic` stops after the SMTP password-file prompt
+  - `advanced` continues into the standard tuning prompts
+  - `advanced-all` continues into all explicit override prompts
+- `rclone remote name for that Drive account`
+  - on the Virginia Tech HPC, use `gdriveN:`
+  - do not use a personal rclone remote there, because the relay uses this remote to reach the shared command-channel and mirror folders
 - `Main project directory on the remote system`
   - example: `/scratch/alice/project_a`
 - `Google Drive folder ID for the shared command channel`
@@ -108,9 +124,12 @@ Important prompts:
 - `NOTIFICATION_TO_SECONDARY`
   - default: `achenie@vt.edu`
 - `NOTIFIER_PASSWORD_FILE`
-  - default: `$HOME/.secrets/remote_pilot_gmail_app_password`
+  - default: `$HOME/.secrets/notifier_gmail_app_password`
+- `COMMAND_FILE_NAME`
+  - default: `commands.sh`
+  - create this file yourself in the shared Google Drive command folder before starting the relay
 
-For ARC / VT-style usage, the sender and VT secondary recipient already default to the original values. The user mainly needs to set the primary recipient and make sure the password file exists on the HPC.
+For ARC / VT-style usage, the sender and VT secondary recipient already default to the original values. The user mainly needs to set the primary recipient and make sure the password file exists on the HPC at `/home/achenie/.secrets/notifier_gmail_app_password`, or accept the default path shown by `configure.sh`.
 
 ## 6. Understand the config resolution
 
@@ -216,8 +235,8 @@ Optional notification setup:
 ```bash
 mkdir -p ~/.secrets
 chmod 700 ~/.secrets
-printf '%s\n' 'your-app-password' > ~/.secrets/remote_pilot_gmail_app_password
-chmod 600 ~/.secrets/remote_pilot_gmail_app_password
+printf '%s\n' 'your-app-password' > ~/.secrets/notifier_gmail_app_password
+chmod 600 ~/.secrets/notifier_gmail_app_password
 ```
 
 Then set:

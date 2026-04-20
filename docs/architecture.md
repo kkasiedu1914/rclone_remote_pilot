@@ -27,7 +27,7 @@ The system separates:
 - `job_supervisor.sh`
   Runs a restart/health loop, repairs bad mounts, and launches the notifier once per Slurm job.
 - `job_notifier.sh`
-  Sends STARTED and FINISHED emails for Slurm jobs.
+  Sends STARTED and FINISHED emails for Slurm jobs, or a standalone project-start summary when Slurm is unavailable.
 - `repair_mount.sh`
   Force-resets a stale or broken mount path.
 - `mount_utils.sh`
@@ -90,7 +90,7 @@ Important directories:
 2. If `SLURM_JOB_NAME` is unset or unknown, it falls back to `JOB_NOTIFICATION_NAME`.
 3. Each loop iteration runs `relayctl.sh restart`.
 4. If the restart fails, it logs the `relayctl` output and runs `repair_mount.sh`.
-5. If `EMAIL_ON_START=1`, it launches `job_notifier.sh` once per Slurm job.
+5. If `EMAIL_ON_START=1`, it launches `job_notifier.sh` once per supervisor run.
 6. Near walltime, it stops the relay and performs cleanup.
 
 ## Mount Health Model

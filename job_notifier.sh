@@ -9,14 +9,31 @@ load_project_env "$SCRIPT_DIR"
 ensure_runtime_dirs
 
 EMAIL_START_OK=0
+NOTIFIER_MODE="standalone"
+SLURM_ENV_DETECTED=0
+
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  NOTIFIER_MODE="slurm"
+  SLURM_ENV_DETECTED=1
+fi
+
+JOB_ID="${SLURM_JOB_ID:-no-slurm}"
+JOB_NAME="${SLURM_JOB_NAME:-unknown}"
+if [[ -z "$JOB_NAME" || "$JOB_NAME" == "unknown" || "$JOB_NAME" == "Unknown" || "$JOB_NAME" == "UNKNOWN" ]]; then
+  JOB_NAME="$PROJECT_NAME"
+fi
+HOST="$(hostname)"
+WORKDIR="$(pwd)"
 
 email_log_event() {
   local status="$1"
   local detail="${2:-}"
   local ts=""
   ts="$(TZ="$REPORT_TZ_ET" date -Is 2>/dev/null || echo unknown)"
+  mkdir -p "$(dirname "$EMAIL_LOG_FILE")" 2>/dev/null || true
   {
     printf '[%s] job_notifier.sh status=%s\n' "$ts" "$status"
+    printf 'mode=%s\n' "$NOTIFIER_MODE"
     printf 'job_id=%s\n' "${JOB_ID:-unknown}"
     printf 'job_name=%s\n' "${JOB_NAME:-unknown}"
     [[ -n "$detail" ]] && printf '%s\n' "$detail"
@@ -32,20 +49,6 @@ email_on_err() {
   return "$exit_code"
 }
 trap email_on_err ERR
-
-if [[ -z "${SLURM_JOB_ID:-}" ]]; then
-  email_log_event "FAIL_START" "missing=SLURM_JOB_ID"
-  echo "This script must run inside a Slurm job" >&2
-  exit 1
-fi
-
-JOB_ID="$SLURM_JOB_ID"
-JOB_NAME="${SLURM_JOB_NAME:-unknown}"
-if [[ -z "$JOB_NAME" || "$JOB_NAME" == "unknown" || "$JOB_NAME" == "Unknown" || "$JOB_NAME" == "UNKNOWN" ]]; then
-  JOB_NAME="$PROJECT_NAME"
-fi
-HOST="$(hostname)"
-WORKDIR="$(pwd)"
 
 if [[ -z "${SMTP_USER:-}" ]]; then
   email_log_event "FAIL_START" "missing=SMTP_USER"
@@ -66,9 +69,10 @@ if (( ${#recipients[@]} == 0 )); then
 fi
 
 EMAIL_START_OK=1
-email_log_event "START_OK"
+email_log_event "START_OK" "slurm_env_detected=$SLURM_ENV_DETECTED"
 
 LOCKFILE="${EMAIL_LOCKFILE:-$STATE_DIR/.job_notifier.lock.${JOB_ID}}"
+mkdir -p "$(dirname "$LOCKFILE")" 2>/dev/null || true
 exec 9>"$LOCKFILE"
 if ! flock -n 9; then
   exit 0
@@ -191,6 +195,101 @@ get_final_state() {
   echo "UNKNOWN"
 }
 
+expand_deferred_string() {
+  local raw="${1:-}"
+  eval "printf '%s' \"$raw\""
+}
+
+resolve_mail_log_file() {
+  local file="$1"
+  case "$file" in
+    relay.log) echo "$RELAY_LOG_FILE" ;;
+    remote.log) echo "$RELAY_LOG_FILE" ;;
+    supervisor.log) echo "$SUPERVISOR_LOG_FILE" ;;
+    command-output.log) echo "$COMMAND_OUTPUT_LOG_FILE" ;;
+    sync.log) echo "$SYNC_LOG_FILE" ;;
+    email.log) echo "$EMAIL_LOG_FILE" ;;
+    *)
+      if [[ "$file" == /* ]]; then
+        echo "$file"
+      elif [[ -f "$file" ]]; then
+        echo "$file"
+      elif [[ -f "$LOG_DIR/$file" ]]; then
+        echo "$LOG_DIR/$file"
+      else
+        echo "$file"
+      fi
+      ;;
+  esac
+}
+
+should_skip_log_entry() {
+  local raw="$1"
+  local resolved="$2"
+
+  if (( SLURM_ENV_DETECTED == 0 )) && [[ "$raw" == *"SLURM_JOB_ID"* || "$resolved" == slurm-*".out" ]]; then
+    return 0
+  fi
+
+  [[ -f "$resolved" ]] || return 0
+  return 1
+}
+
+build_log_sections() {
+  local expanded_mail_logs=""
+  expanded_mail_logs="$(expand_deferred_string "$MAIL_LOG_FILES")"
+
+  local split_ifs="$IFS"
+  local -a files=()
+  local -a included=()
+  IFS=' '
+  read -r -a files <<< "$expanded_mail_logs"
+  IFS="$split_ifs"
+
+  local file=""
+  local resolved_file=""
+  local section=""
+  for file in "${files[@]}"; do
+    [[ -n "$file" ]] || continue
+    resolved_file="$(resolve_mail_log_file "$file")"
+    if should_skip_log_entry "$file" "$resolved_file"; then
+      continue
+    fi
+
+    included+=("$resolved_file")
+    section+=$'\n------------------------------\n'
+    section+="Tail of log file: $resolved_file"$'\n'
+    section+="$(tail -n 40 "$resolved_file")"$'\n'
+  done
+
+  if (( ${#included[@]} == 0 )); then
+    section+=$'\nNo current log files were attached.\n'
+  fi
+
+  printf '%s' "$section"
+}
+
+build_project_summary() {
+  cat <<EOF
+Project name:            $PROJECT_NAME
+Notifier mode:           $NOTIFIER_MODE
+Host:                    $HOST
+Workdir:                 $WORKDIR
+Project directory:       $PROJECT_DIR
+Project instance root:   $PROJECT_INSTANCE_ROOT
+Command channel mount:   $COMMAND_CHANNEL_MOUNT
+Command file name:       $COMMAND_FILE_NAME
+Mirror remote:           $RCLONE_REMOTE
+Mirror subdir:           $MIRROR_REMOTE_SUBDIR
+Relay poll interval:     $SLEEP_SECS
+Supervisor interval:     $INTERVAL_SEC
+Run in background:       $RUN_IN_BACKGROUND
+Publish logs:            $PUBLISH_LOGS
+Log directory:           $LOG_DIR
+State directory:         $STATE_DIR
+EOF
+}
+
 send_mail() {
   local status="$1"
   local icon="ℹ️"
@@ -200,23 +299,28 @@ send_mail() {
     *FAILED*|*TIMEOUT*|*CANCELLED*) icon="❌" ;;
   esac
 
-  get_slurm_times
   local now_epoch=""
   now_epoch="$(date +%s)"
-  local now_et now_gmt start_et start_gmt end_et end_gmt
+  local now_et now_gmt
   now_et="$(epoch_to_tz "$now_epoch" "$REPORT_TZ_ET")"
   now_gmt="$(epoch_to_tz "$now_epoch" "$REPORT_TZ_GMT")"
-  start_et="$(slurm_ts_to_tz "$SLURM_START" "$REPORT_TZ_ET")"
-  start_gmt="$(slurm_ts_to_tz "$SLURM_START" "$REPORT_TZ_GMT")"
-  end_et="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_ET")"
-  end_gmt="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_GMT")"
 
-  local subject="[Remote Pilot $JOB_ID] $status $icon"
+  local subject=""
   local body=""
-  body=$(cat <<EOF
+
+  if (( SLURM_ENV_DETECTED == 1 )); then
+    get_slurm_times
+    local start_et start_gmt end_et end_gmt
+    start_et="$(slurm_ts_to_tz "$SLURM_START" "$REPORT_TZ_ET")"
+    start_gmt="$(slurm_ts_to_tz "$SLURM_START" "$REPORT_TZ_GMT")"
+    end_et="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_ET")"
+    end_gmt="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_GMT")"
+    subject="[Remote Pilot $JOB_ID] $status $icon"
+    body=$(cat <<EOF
 Status:          $status
 Job ID:          $JOB_ID
 Job name:        $JOB_NAME
+Project:         $PROJECT_NAME
 Host:            $HOST
 Workdir:         $WORKDIR
 
@@ -235,55 +339,35 @@ This job is running on a remote resource.
 EOF
 )
 
-  case "$status" in
-    STARTED*)
-      body+=$'\nYou will receive another email when this job finishes.\n'
-      ;;
-    *)
-      body+=$'\nThe job has finished; this message reflects the final Slurm state.\n'
-      ;;
-  esac
-
-  resolve_mail_log_file() {
-    local file="$1"
-    case "$file" in
-      relay.log) echo "$RELAY_LOG_FILE" ;;
-      remote.log) echo "$RELAY_LOG_FILE" ;;
-      supervisor.log) echo "$SUPERVISOR_LOG_FILE" ;;
-      command-output.log) echo "$COMMAND_OUTPUT_LOG_FILE" ;;
-      sync.log) echo "$SYNC_LOG_FILE" ;;
-      email.log) echo "$EMAIL_LOG_FILE" ;;
+    case "$status" in
+      STARTED*)
+        body+=$'\nYou will receive another email when this job finishes.\n'
+        ;;
       *)
-        if [[ "$file" == /* ]]; then
-          echo "$file"
-        elif [[ -f "$file" ]]; then
-          echo "$file"
-        elif [[ -f "$LOG_DIR/$file" ]]; then
-          echo "$LOG_DIR/$file"
-        else
-          echo "$file"
-        fi
+        body+=$'\nThe job has finished; this message reflects the final Slurm state.\n'
         ;;
     esac
-  }
+  else
+    subject="[Remote Pilot $PROJECT_NAME] $status (non-Slurm) $icon"
+    body=$(cat <<EOF
+Status:                  $status
+Project:                 $PROJECT_NAME
+Job name:                $JOB_NAME
+Host:                    $HOST
+Workdir:                 $WORKDIR
+Current time (ET):       $now_et
+Current time (GMT):      $now_gmt
 
-  local split_ifs="$IFS"
-  local -a files=()
-  IFS=' '
-  read -r -a files <<< "$MAIL_LOG_FILES"
-  IFS="$split_ifs"
-  local file=""
-  local resolved_file=""
-  for file in "${files[@]}"; do
-    resolved_file="$(resolve_mail_log_file "$file")"
-    body+=$'\n------------------------------\n'
-    body+="Tail of log file: $resolved_file"$'\n'
-    if [[ -f "$resolved_file" ]]; then
-      body+="$(tail -n 40 "$resolved_file")"$'\n'
-    else
-      body+="(file not found)"$'\n'
-    fi
-  done
+Could not detect a Slurm environment or usable Slurm job parameters.
+Using standalone project notification mode instead of Slurm job reporting.
+
+$(build_project_summary)
+EOF
+)
+    body+=$'\nThis message reflects the current project startup state and the available logs so far.\n'
+  fi
+
+  body+="$(build_log_sections)"
 
   local -a mail_cmd=("$SCRIPT_DIR/send_email.py")
   local recipient=""
@@ -295,6 +379,11 @@ EOF
 }
 
 main() {
+  if (( SLURM_ENV_DETECTED == 0 )); then
+    send_mail "STARTED"
+    return 0
+  fi
+
   send_mail "STARTED"
   get_slurm_times
 

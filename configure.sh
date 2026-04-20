@@ -9,6 +9,24 @@ load_project_env "$SCRIPT_DIR"
 
 CONFIG_MODE="project"
 TARGET_PROJECT="${REMOTE_PILOT_PROJECT:-default}"
+CONFIG_DEPTH="${REMOTE_PILOT_CONFIG_DEPTH:-advanced}"
+
+validate_config_depth() {
+  case "$1" in
+    basic|advanced|advanced-all) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+depth_is_at_least() {
+  local requested="$1"
+  case "$CONFIG_DEPTH" in
+    advanced-all) return 0 ;;
+    advanced) [[ "$requested" != "advanced-all" ]] ;;
+    basic) [[ "$requested" == "basic" ]] ;;
+    *) return 1 ;;
+  esac
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,8 +38,20 @@ while [[ $# -gt 0 ]]; do
       CONFIG_MODE="global"
       shift
       ;;
+    --basic)
+      CONFIG_DEPTH="basic"
+      shift
+      ;;
+    --advanced)
+      CONFIG_DEPTH="advanced"
+      shift
+      ;;
+    --advanced-all)
+      CONFIG_DEPTH="advanced-all"
+      shift
+      ;;
     *)
-      echo "Usage: $0 [--project NAME] [--global]" >&2
+      echo "Usage: $0 [--project NAME] [--global] [--basic|--advanced|--advanced-all]" >&2
       exit 1
       ;;
   esac
@@ -51,6 +81,29 @@ prompt_value() {
   fi
 
   printf -v "$__var_name" '%s' "$response"
+}
+
+project_setting_default() {
+  local key="$1"
+  local fallback="${2:-}"
+  local value=""
+
+  if [[ -f "$PROJECT_ENV_FILE" ]]; then
+    value="$(
+      (
+        set -a
+        # shellcheck source=/dev/null
+        . "$PROJECT_ENV_FILE" >/dev/null 2>&1 || true
+        eval "printf '%s' \"\${$key-}\""
+      )
+    )"
+  fi
+
+  if [[ -n "$value" ]]; then
+    printf '%s' "$value"
+  else
+    printf '%s' "$fallback"
+  fi
 }
 
 write_setting() {
@@ -91,6 +144,11 @@ EOF
   exit 0
 fi
 
+if ! validate_config_depth "$CONFIG_DEPTH"; then
+  echo "Invalid configuration depth: $CONFIG_DEPTH" >&2
+  exit 1
+fi
+
 default_project_dir="${PROJECT_DIR:-$HOME/projects/$TARGET_PROJECT}"
 default_mount="$HOME/remote-pilot/${TARGET_PROJECT}/command-channel"
 default_mirror_subdir="${MIRROR_REMOTE_SUBDIR:-${TARGET_PROJECT}/$(hostname -s 2>/dev/null || echo remote-host)}"
@@ -100,75 +158,215 @@ echo "Project name: $TARGET_PROJECT"
 echo "This writes $PROJECT_ENV_FILE."
 echo "ARC / VT defaults: SMTP sender defaults to arc.knust.job.notifier@gmail.com and the VT secondary recipient defaults to achenie@vt.edu."
 echo "Primary recipient has no default and should be set by the user."
+echo "Configuration depth modes:"
+echo "- basic: prompts through the SMTP password file only"
+echo "- advanced: adds the normal runtime tuning prompts"
+echo "- advanced-all: adds full path, log, cache, and reporting overrides"
 echo
 
-prompt_value REMOTE_ACCESS_EMAIL_VALUE "Google Drive email to grant access to the shared folders" "$REMOTE_ACCESS_EMAIL"
-prompt_value RCLONE_REMOTE_VALUE "rclone remote name for that Drive account" "$default_remote"
-prompt_value PROJECT_DIR_VALUE "Main project directory on the remote system" "$default_project_dir"
-prompt_value COMMAND_CHANNEL_FOLDER_ID_VALUE "Google Drive folder ID for the shared command channel" "$COMMAND_CHANNEL_FOLDER_ID"
-prompt_value MIRROR_ROOT_FOLDER_ID_VALUE "Google Drive folder ID for the shared mirror root" "$MIRROR_ROOT_FOLDER_ID"
-prompt_value COMMAND_CHANNEL_MOUNT_VALUE "Local mount point for the command channel" "$default_mount"
+prompt_value CONFIG_DEPTH_VALUE "Configuration depth (basic|advanced|advanced-all)" "$CONFIG_DEPTH"
+while ! validate_config_depth "$CONFIG_DEPTH_VALUE"; do
+  echo "Enter one of: basic, advanced, advanced-all"
+  prompt_value CONFIG_DEPTH_VALUE "Configuration depth (basic|advanced|advanced-all)" "$CONFIG_DEPTH"
+done
+CONFIG_DEPTH="$CONFIG_DEPTH_VALUE"
+
+prompt_value REMOTE_ACCESS_EMAIL_VALUE "Google Drive email to grant access to the shared folders" "$(project_setting_default REMOTE_ACCESS_EMAIL "$REMOTE_ACCESS_EMAIL")"
+prompt_value RCLONE_REMOTE_VALUE "rclone remote name for that Drive account" "$(project_setting_default RCLONE_REMOTE "$default_remote")"
+prompt_value PROJECT_DIR_VALUE "Main project directory on the remote system" "$(project_setting_default PROJECT_DIR "$default_project_dir")"
+prompt_value COMMAND_CHANNEL_FOLDER_ID_VALUE "Google Drive folder ID for the shared command channel" "$(project_setting_default COMMAND_CHANNEL_FOLDER_ID "$COMMAND_CHANNEL_FOLDER_ID")"
+prompt_value MIRROR_ROOT_FOLDER_ID_VALUE "Google Drive folder ID for the shared mirror root" "$(project_setting_default MIRROR_ROOT_FOLDER_ID "$MIRROR_ROOT_FOLDER_ID")"
+prompt_value COMMAND_CHANNEL_MOUNT_VALUE "Local mount point for the command channel" "$(project_setting_default COMMAND_CHANNEL_MOUNT "$default_mount")"
 echo "Requirement: create ${COMMAND_FILE_NAME:-commands.sh} in the shared Google Drive command folder yourself."
 echo "The relay will not create it. Missing or stale mounted command files can lead to cached mount issues."
-prompt_value COMMAND_FILE_NAME_VALUE "Command file name to watch" "${COMMAND_FILE_NAME:-commands.sh}"
-prompt_value MIRROR_REMOTE_SUBDIR_VALUE "Mirror subdirectory name for this machine" "$default_mirror_subdir"
-prompt_value SMTP_USER_VALUE "SMTP sender email for optional job notifications" "${SMTP_USER:-arc.knust.job.notifier@gmail.com}"
-prompt_value NOTIFICATION_TO_PRIMARY_VALUE "Primary notification recipient (required if using email)" "${NOTIFICATION_TO_PRIMARY:-}"
-prompt_value NOTIFICATION_TO_SECONDARY_VALUE "Secondary notification recipient" "${NOTIFICATION_TO_SECONDARY:-achenie@vt.edu}"
-prompt_value NOTIFIER_PASSWORD_FILE_VALUE "Password file for SMTP app password" "$NOTIFIER_PASSWORD_FILE"
+prompt_value COMMAND_FILE_NAME_VALUE "Command file name to watch" "$(project_setting_default COMMAND_FILE_NAME "${COMMAND_FILE_NAME:-commands.sh}")"
+prompt_value MIRROR_REMOTE_SUBDIR_VALUE "Mirror subdirectory name for this machine" "$(project_setting_default MIRROR_REMOTE_SUBDIR "$default_mirror_subdir")"
+prompt_value SMTP_USER_VALUE "SMTP sender email for optional job notifications" "$(project_setting_default SMTP_USER "${SMTP_USER:-arc.knust.job.notifier@gmail.com}")"
+prompt_value NOTIFICATION_TO_PRIMARY_VALUE "Primary notification recipient (required if using email)" "$(project_setting_default NOTIFICATION_TO_PRIMARY "${NOTIFICATION_TO_PRIMARY:-}")"
+prompt_value NOTIFICATION_TO_SECONDARY_VALUE "Secondary notification recipient" "$(project_setting_default NOTIFICATION_TO_SECONDARY "${NOTIFICATION_TO_SECONDARY:-achenie@vt.edu}")"
+prompt_value NOTIFIER_PASSWORD_FILE_VALUE "Password file for SMTP app password" "$(project_setting_default NOTIFIER_PASSWORD_FILE "$NOTIFIER_PASSWORD_FILE")"
 
-echo
-echo "Advanced runtime tuning"
-echo "Press Enter to keep the defaults."
-echo
-prompt_value SLEEP_SECS_VALUE "Relay poll interval in seconds" "${SLEEP_SECS:-45}"
-prompt_value INTERVAL_SEC_VALUE "Supervisor restart-check interval in seconds" "${INTERVAL_SEC:-1800}"
-prompt_value TTL_HOURS_VALUE "Relay TTL in hours" "${TTL_HOURS:-48}"
-prompt_value RUN_IN_BACKGROUND_VALUE "Run commands in background (1=yes, 0=no)" "${RUN_IN_BACKGROUND:-1}"
-prompt_value MAX_CONCURRENT_VALUE "Maximum concurrent command runs" "${MAX_CONCURRENT:-1}"
-prompt_value COMMAND_TIMEOUT_SECS_VALUE "Command timeout in seconds (0 disables)" "${COMMAND_TIMEOUT_SECS:-240}"
-prompt_value COMMAND_TIMEOUT_KILL_GRACE_SECS_VALUE "Timeout kill grace in seconds" "${COMMAND_TIMEOUT_KILL_GRACE_SECS:-30}"
-prompt_value PUBLISH_LOGS_VALUE "Publish logs back to the command channel (1=yes, 0=no)" "${PUBLISH_LOGS:-1}"
-prompt_value EMAIL_ON_START_VALUE "Auto-start email notifier inside Slurm jobs (1=yes, 0=no)" "${EMAIL_ON_START:-1}"
-prompt_value FINISH_MARGIN_SECONDS_VALUE "Seconds before walltime to stop relay / send final handling" "${FINISH_MARGIN_SECONDS:-60}"
+PROJECT_INSTANCE_ROOT_DERIVED="${PROJECT_DIR_VALUE}/.remote-pilot/${TARGET_PROJECT}"
+SYNC_SOURCE_DIR_DERIVED="${PROJECT_DIR_VALUE}"
+COMMAND_CHANNEL_LOG_SUBDIR_DERIVED="logs"
+LOG_DIR_DERIVED="${PROJECT_INSTANCE_ROOT_DERIVED}/logs"
+STATE_DIR_DERIVED="${PROJECT_INSTANCE_ROOT_DERIVED}/state"
+COMMAND_CHANNEL_LOG_DIR_DERIVED="${COMMAND_CHANNEL_MOUNT_VALUE}/${COMMAND_CHANNEL_LOG_SUBDIR_DERIVED}"
+PROJECT_INSTANCE_ROOT_VALUE="$(project_setting_default PROJECT_INSTANCE_ROOT "$PROJECT_INSTANCE_ROOT_DERIVED")"
+SYNC_SOURCE_DIR_VALUE="$(project_setting_default SYNC_SOURCE_DIR "$SYNC_SOURCE_DIR_DERIVED")"
+COMMAND_CHANNEL_LOG_SUBDIR_VALUE="$(project_setting_default COMMAND_CHANNEL_LOG_SUBDIR "$COMMAND_CHANNEL_LOG_SUBDIR_DERIVED")"
+LOG_DIR_VALUE="$(project_setting_default LOG_DIR "$LOG_DIR_DERIVED")"
+STATE_DIR_VALUE="$(project_setting_default STATE_DIR "$STATE_DIR_DERIVED")"
+COMMAND_CHANNEL_LOG_DIR_VALUE="$(project_setting_default COMMAND_CHANNEL_LOG_DIR "$COMMAND_CHANNEL_LOG_DIR_DERIVED")"
+SLEEP_SECS_VALUE="$(project_setting_default SLEEP_SECS "${SLEEP_SECS:-45}")"
+INTERVAL_SEC_VALUE="$(project_setting_default INTERVAL_SEC "${INTERVAL_SEC:-1800}")"
+TTL_HOURS_VALUE="$(project_setting_default TTL_HOURS "${TTL_HOURS:-48}")"
+RUN_IN_BACKGROUND_VALUE="$(project_setting_default RUN_IN_BACKGROUND "${RUN_IN_BACKGROUND:-1}")"
+MAX_CONCURRENT_VALUE="$(project_setting_default MAX_CONCURRENT "${MAX_CONCURRENT:-1}")"
+COMMAND_TIMEOUT_SECS_VALUE="$(project_setting_default COMMAND_TIMEOUT_SECS "${COMMAND_TIMEOUT_SECS:-240}")"
+COMMAND_TIMEOUT_KILL_GRACE_SECS_VALUE="$(project_setting_default COMMAND_TIMEOUT_KILL_GRACE_SECS "${COMMAND_TIMEOUT_KILL_GRACE_SECS:-30}")"
+TIMEOUT_REQUEUE_TO_BG_VALUE="$(project_setting_default TIMEOUT_REQUEUE_TO_BG "${TIMEOUT_REQUEUE_TO_BG:-1}")"
+PUBLISH_LOGS_VALUE="$(project_setting_default PUBLISH_LOGS "${PUBLISH_LOGS:-1}")"
+COMMAND_SNAPSHOT_MAX_ATTEMPTS_VALUE="$(project_setting_default COMMAND_SNAPSHOT_MAX_ATTEMPTS "${COMMAND_SNAPSHOT_MAX_ATTEMPTS:-5}")"
+COMMAND_SNAPSHOT_SETTLE_SECS_VALUE="$(project_setting_default COMMAND_SNAPSHOT_SETTLE_SECS "${COMMAND_SNAPSHOT_SETTLE_SECS:-2}")"
+RELAY_LOG_FILE_VALUE="$(project_setting_default RELAY_LOG_FILE "$LOG_DIR_VALUE/relay.log")"
+COMMAND_OUTPUT_LOG_FILE_VALUE="$(project_setting_default COMMAND_OUTPUT_LOG_FILE "$LOG_DIR_VALUE/command-output.log")"
+COMMAND_HISTORY_FILE_VALUE="$(project_setting_default COMMAND_HISTORY_FILE "$LOG_DIR_VALUE/command-history.log")"
+SUPERVISOR_LOG_FILE_VALUE="$(project_setting_default SUPERVISOR_LOG_FILE "$LOG_DIR_VALUE/supervisor.log")"
+SYNC_LOG_FILE_VALUE="$(project_setting_default SYNC_LOG_FILE "$LOG_DIR_VALUE/sync.log")"
+EMAIL_LOG_FILE_VALUE="$(project_setting_default EMAIL_LOG_FILE "$LOG_DIR_VALUE/email.log")"
+PIDS_DIR_VALUE="$(project_setting_default PIDS_DIR "$STATE_DIR_VALUE/relay-jobs")"
+RCLONE_CACHE_DIR_VALUE="$(project_setting_default RCLONE_CACHE_DIR "$STATE_DIR_VALUE/rclone-cache")"
+RELAY_PID_FILE_VALUE="$(project_setting_default RELAY_PID_FILE "$STATE_DIR_VALUE/relay.pid")"
+RELAY_LOCK_FILE_VALUE="$(project_setting_default RELAY_LOCK_FILE "$STATE_DIR_VALUE/relay.lock")"
+SUPERVISOR_LOCK_FILE_VALUE="$(project_setting_default SUPERVISOR_LOCK_FILE "$STATE_DIR_VALUE/supervisor.lock")"
+PREVIOUS_COMMAND_SCRIPT_VALUE="$(project_setting_default PREVIOUS_COMMAND_SCRIPT "$STATE_DIR_VALUE/commands.prev.sh")"
+RCLONE_CONFIG_VALUE="$(project_setting_default RCLONE_CONFIG "${RCLONE_CONFIG:-}")"
+RCLONE_EXTRA_FLAGS_VALUE="$(project_setting_default RCLONE_EXTRA_FLAGS "${RCLONE_EXTRA_FLAGS:---fast-list --transfers=8 --checkers=8}")"
+SYNC_INCLUDE_GLOBS_VALUE="$(project_setting_default SYNC_INCLUDE_GLOBS "${SYNC_INCLUDE_GLOBS:-results/** outputs/** logs/** *.out *.log *.txt}")"
+SYNC_EXCLUDES_VALUE="$(project_setting_default SYNC_EXCLUDES "${SYNC_EXCLUDES:-.git/** .remote-pilot/** state/** .env .relay.lock **/.relay.lock **/__pycache__/** *.tmp .*.swp}")"
+JOB_NOTIFICATION_NAME_VALUE="$(project_setting_default JOB_NOTIFICATION_NAME "$TARGET_PROJECT")"
+EMAIL_ON_START_VALUE="$(project_setting_default EMAIL_ON_START "${EMAIL_ON_START:-1}")"
+EMAIL_SENTINEL_FILE_VALUE="$(project_setting_default EMAIL_SENTINEL_FILE "$STATE_DIR_VALUE/.email_notifier.started.\${SLURM_JOB_ID:-unknown}")"
+FINISH_MARGIN_SECONDS_VALUE="$(project_setting_default FINISH_MARGIN_SECONDS "${FINISH_MARGIN_SECONDS:-60}")"
+MAIL_LOG_FILES_VALUE="$(project_setting_default MAIL_LOG_FILES "slurm-\${SLURM_JOB_ID:-unknown}.out $RELAY_LOG_FILE_VALUE $SUPERVISOR_LOG_FILE_VALUE")"
+SLURM_TIME_TZ_VALUE="$(project_setting_default SLURM_TIME_TZ "${SLURM_TIME_TZ:-America/New_York}")"
+REPORT_TZ_ET_VALUE="$(project_setting_default REPORT_TZ_ET "${REPORT_TZ_ET:-America/New_York}")"
+REPORT_TZ_GMT_VALUE="$(project_setting_default REPORT_TZ_GMT "${REPORT_TZ_GMT:-GMT}")"
+WRITE_COMMAND_HISTORY_VALUE="$(project_setting_default WRITE_COMMAND_HISTORY "${WRITE_COMMAND_HISTORY:-1}")"
+INCLUDE_COMMAND_SNAPSHOT_IN_CMD_LOG_VALUE="$(project_setting_default INCLUDE_COMMAND_SNAPSHOT_IN_CMD_LOG "${INCLUDE_COMMAND_SNAPSHOT_IN_CMD_LOG:-0}")"
+EMAIL_LOCKFILE_VALUE="$(project_setting_default EMAIL_LOCKFILE "$STATE_DIR_VALUE/.job_notifier.lock.\${SLURM_JOB_ID:-unknown}")"
 
-PROJECT_INSTANCE_ROOT_VALUE="${PROJECT_DIR_VALUE}/.remote-pilot/${TARGET_PROJECT}"
+if depth_is_at_least "advanced"; then
+  echo
+  echo "Advanced runtime tuning"
+  echo "Press Enter to keep the defaults."
+  echo
+  prompt_value SLEEP_SECS_VALUE "Relay poll interval in seconds" "$SLEEP_SECS_VALUE"
+  prompt_value INTERVAL_SEC_VALUE "Supervisor restart-check interval in seconds" "$INTERVAL_SEC_VALUE"
+  prompt_value TTL_HOURS_VALUE "Relay TTL in hours" "$TTL_HOURS_VALUE"
+  prompt_value RUN_IN_BACKGROUND_VALUE "Run commands in background (1=yes, 0=no)" "$RUN_IN_BACKGROUND_VALUE"
+  prompt_value MAX_CONCURRENT_VALUE "Maximum concurrent command runs" "$MAX_CONCURRENT_VALUE"
+  prompt_value COMMAND_TIMEOUT_SECS_VALUE "Command timeout in seconds (0 disables)" "$COMMAND_TIMEOUT_SECS_VALUE"
+  prompt_value COMMAND_TIMEOUT_KILL_GRACE_SECS_VALUE "Timeout kill grace in seconds" "$COMMAND_TIMEOUT_KILL_GRACE_SECS_VALUE"
+  prompt_value PUBLISH_LOGS_VALUE "Publish logs back to the command channel (1=yes, 0=no)" "$PUBLISH_LOGS_VALUE"
+  prompt_value EMAIL_ON_START_VALUE "Auto-start email notifier inside Slurm jobs (1=yes, 0=no)" "$EMAIL_ON_START_VALUE"
+  prompt_value FINISH_MARGIN_SECONDS_VALUE "Seconds before walltime to stop relay / send final handling" "$FINISH_MARGIN_SECONDS_VALUE"
+fi
+
+if depth_is_at_least "advanced-all"; then
+  echo
+  echo "Advanced all overrides"
+  echo "Press Enter to keep the derived defaults."
+  echo
+  prompt_value PROJECT_INSTANCE_ROOT_VALUE "Project instance root directory" "$PROJECT_INSTANCE_ROOT_VALUE"
+  prompt_value SYNC_SOURCE_DIR_VALUE "Source directory mirrored by sync_mirror.sh" "$SYNC_SOURCE_DIR_VALUE"
+  prompt_value COMMAND_CHANNEL_LOG_SUBDIR_VALUE "Published log subdirectory inside the command channel" "$COMMAND_CHANNEL_LOG_SUBDIR_VALUE"
+  prompt_value COMMAND_CHANNEL_LOG_DIR_VALUE "Published log directory path" "$COMMAND_CHANNEL_LOG_DIR_VALUE"
+  prompt_value RCLONE_CONFIG_VALUE "Explicit rclone config path (blank uses normal discovery)" "$RCLONE_CONFIG_VALUE"
+  prompt_value RCLONE_EXTRA_FLAGS_VALUE "Extra rclone transfer flags" "$RCLONE_EXTRA_FLAGS_VALUE"
+  prompt_value SYNC_INCLUDE_GLOBS_VALUE "sync_mirror include globs" "$SYNC_INCLUDE_GLOBS_VALUE"
+  prompt_value SYNC_EXCLUDES_VALUE "sync_mirror exclude globs" "$SYNC_EXCLUDES_VALUE"
+  prompt_value TIMEOUT_REQUEUE_TO_BG_VALUE "Requeue timed-out foreground runs into background mode (1=yes, 0=no)" "$TIMEOUT_REQUEUE_TO_BG_VALUE"
+  prompt_value COMMAND_SNAPSHOT_MAX_ATTEMPTS_VALUE "Stable snapshot attempts for commands.sh" "$COMMAND_SNAPSHOT_MAX_ATTEMPTS_VALUE"
+  prompt_value COMMAND_SNAPSHOT_SETTLE_SECS_VALUE "Delay between snapshot attempts in seconds" "$COMMAND_SNAPSHOT_SETTLE_SECS_VALUE"
+  prompt_value LOG_DIR_VALUE "Local authoritative log directory" "$LOG_DIR_VALUE"
+  prompt_value STATE_DIR_VALUE "Local state directory" "$STATE_DIR_VALUE"
+  prompt_value RELAY_LOG_FILE_VALUE "Relay control log file" "$RELAY_LOG_FILE_VALUE"
+  prompt_value COMMAND_OUTPUT_LOG_FILE_VALUE "Command output log file" "$COMMAND_OUTPUT_LOG_FILE_VALUE"
+  prompt_value COMMAND_HISTORY_FILE_VALUE "Command history log file" "$COMMAND_HISTORY_FILE_VALUE"
+  prompt_value SUPERVISOR_LOG_FILE_VALUE "Supervisor log file" "$SUPERVISOR_LOG_FILE_VALUE"
+  prompt_value SYNC_LOG_FILE_VALUE "Mirror log file" "$SYNC_LOG_FILE_VALUE"
+  prompt_value EMAIL_LOG_FILE_VALUE "Notifier log file" "$EMAIL_LOG_FILE_VALUE"
+  prompt_value WRITE_COMMAND_HISTORY_VALUE "Write command history snapshots (1=yes, 0=no)" "$WRITE_COMMAND_HISTORY_VALUE"
+  prompt_value INCLUDE_COMMAND_SNAPSHOT_IN_CMD_LOG_VALUE "Include command snapshots in command-output.log (1=yes, 0=no)" "$INCLUDE_COMMAND_SNAPSHOT_IN_CMD_LOG_VALUE"
+  prompt_value RELAY_PID_FILE_VALUE "Relay PID file path" "$RELAY_PID_FILE_VALUE"
+  prompt_value RELAY_LOCK_FILE_VALUE "Relay lock file path" "$RELAY_LOCK_FILE_VALUE"
+  prompt_value SUPERVISOR_LOCK_FILE_VALUE "Supervisor lock file path" "$SUPERVISOR_LOCK_FILE_VALUE"
+  prompt_value PREVIOUS_COMMAND_SCRIPT_VALUE "Previous command snapshot file" "$PREVIOUS_COMMAND_SCRIPT_VALUE"
+  prompt_value PIDS_DIR_VALUE "Background job PID directory" "$PIDS_DIR_VALUE"
+  prompt_value RCLONE_CACHE_DIR_VALUE "rclone cache directory" "$RCLONE_CACHE_DIR_VALUE"
+  prompt_value JOB_NOTIFICATION_NAME_VALUE "Fallback job notification name" "$JOB_NOTIFICATION_NAME_VALUE"
+  prompt_value EMAIL_LOCKFILE_VALUE "Email notifier lock file path" "$EMAIL_LOCKFILE_VALUE"
+  prompt_value EMAIL_SENTINEL_FILE_VALUE "Email sentinel file path" "$EMAIL_SENTINEL_FILE_VALUE"
+  prompt_value MAIL_LOG_FILES_VALUE "Notification log file list" "$MAIL_LOG_FILES_VALUE"
+  prompt_value SLURM_TIME_TZ_VALUE "Time zone used to parse Slurm timestamps" "$SLURM_TIME_TZ_VALUE"
+  prompt_value REPORT_TZ_ET_VALUE "ET reporting time zone" "$REPORT_TZ_ET_VALUE"
+  prompt_value REPORT_TZ_GMT_VALUE "GMT reporting time zone" "$REPORT_TZ_GMT_VALUE"
+fi
+
 mkdir -p "$PROJECT_ENV_DIR"
 
 ENV_FILE="$PROJECT_ENV_FILE"
 : > "$ENV_FILE"
-{
-  echo "# Generated by configure.sh on $(date -Is)"
-  echo "# Project-specific config for REMOTE_PILOT_PROJECT=$TARGET_PROJECT"
-} >> "$ENV_FILE"
-write_setting "PROJECT_NAME" "$TARGET_PROJECT"
-write_setting "REMOTE_ACCESS_EMAIL" "$REMOTE_ACCESS_EMAIL_VALUE"
-write_setting "PROJECT_DIR" "$PROJECT_DIR_VALUE"
-write_setting "PROJECT_INSTANCE_ROOT" "$PROJECT_INSTANCE_ROOT_VALUE"
+  {
+    echo "# Generated by configure.sh on $(date -Is)"
+    echo "# Project-specific config for REMOTE_PILOT_PROJECT=$TARGET_PROJECT"
+    echo "# Configuration depth: $CONFIG_DEPTH"
+  } >> "$ENV_FILE"
+  write_setting "PROJECT_NAME" "$TARGET_PROJECT"
+  write_setting "REMOTE_PILOT_CONFIG_DEPTH" "$CONFIG_DEPTH"
+  write_setting "REMOTE_ACCESS_EMAIL" "$REMOTE_ACCESS_EMAIL_VALUE"
+  write_setting "PROJECT_DIR" "$PROJECT_DIR_VALUE"
+  write_setting "PROJECT_INSTANCE_ROOT" "$PROJECT_INSTANCE_ROOT_VALUE"
 write_setting "RCLONE_REMOTE" "$RCLONE_REMOTE_VALUE"
-write_setting "COMMAND_CHANNEL_FOLDER_ID" "$COMMAND_CHANNEL_FOLDER_ID_VALUE"
-write_setting "COMMAND_CHANNEL_MOUNT" "$COMMAND_CHANNEL_MOUNT_VALUE"
-write_setting "COMMAND_FILE_NAME" "$COMMAND_FILE_NAME_VALUE"
-write_setting "COMMAND_CHANNEL_LOG_SUBDIR" "logs"
-write_setting "MIRROR_ROOT_FOLDER_ID" "$MIRROR_ROOT_FOLDER_ID_VALUE"
-write_setting "MIRROR_REMOTE_SUBDIR" "$MIRROR_REMOTE_SUBDIR_VALUE"
-write_setting "SYNC_SOURCE_DIR" "$PROJECT_DIR_VALUE"
-write_setting "SLEEP_SECS" "$SLEEP_SECS_VALUE"
-write_setting "INTERVAL_SEC" "$INTERVAL_SEC_VALUE"
-write_setting "TTL_HOURS" "$TTL_HOURS_VALUE"
-write_setting "RUN_IN_BACKGROUND" "$RUN_IN_BACKGROUND_VALUE"
-write_setting "MAX_CONCURRENT" "$MAX_CONCURRENT_VALUE"
-write_setting "COMMAND_TIMEOUT_SECS" "$COMMAND_TIMEOUT_SECS_VALUE"
-write_setting "COMMAND_TIMEOUT_KILL_GRACE_SECS" "$COMMAND_TIMEOUT_KILL_GRACE_SECS_VALUE"
-write_setting "TIMEOUT_REQUEUE_TO_BG" "$TIMEOUT_REQUEUE_TO_BG"
-write_setting "PUBLISH_LOGS" "$PUBLISH_LOGS_VALUE"
-write_setting "SMTP_USER" "$SMTP_USER_VALUE"
-write_setting "NOTIFICATION_TO_PRIMARY" "$NOTIFICATION_TO_PRIMARY_VALUE"
-write_setting "NOTIFICATION_TO_SECONDARY" "$NOTIFICATION_TO_SECONDARY_VALUE"
-write_setting "NOTIFIER_PASSWORD_FILE" "$NOTIFIER_PASSWORD_FILE_VALUE"
-write_setting "EMAIL_ON_START" "$EMAIL_ON_START_VALUE"
-write_setting "FINISH_MARGIN_SECONDS" "$FINISH_MARGIN_SECONDS_VALUE"
-chmod 600 "$ENV_FILE"
+  write_setting "COMMAND_CHANNEL_FOLDER_ID" "$COMMAND_CHANNEL_FOLDER_ID_VALUE"
+  write_setting "COMMAND_CHANNEL_MOUNT" "$COMMAND_CHANNEL_MOUNT_VALUE"
+  write_setting "COMMAND_FILE_NAME" "$COMMAND_FILE_NAME_VALUE"
+  write_setting "COMMAND_CHANNEL_LOG_SUBDIR" "$COMMAND_CHANNEL_LOG_SUBDIR_VALUE"
+  write_setting "MIRROR_ROOT_FOLDER_ID" "$MIRROR_ROOT_FOLDER_ID_VALUE"
+  write_setting "MIRROR_REMOTE_SUBDIR" "$MIRROR_REMOTE_SUBDIR_VALUE"
+  write_setting "SYNC_SOURCE_DIR" "$SYNC_SOURCE_DIR_VALUE"
+  write_setting "SMTP_USER" "$SMTP_USER_VALUE"
+  write_setting "NOTIFICATION_TO_PRIMARY" "$NOTIFICATION_TO_PRIMARY_VALUE"
+  write_setting "NOTIFICATION_TO_SECONDARY" "$NOTIFICATION_TO_SECONDARY_VALUE"
+  write_setting "NOTIFIER_PASSWORD_FILE" "$NOTIFIER_PASSWORD_FILE_VALUE"
+  if depth_is_at_least "advanced"; then
+    write_setting "SLEEP_SECS" "$SLEEP_SECS_VALUE"
+    write_setting "INTERVAL_SEC" "$INTERVAL_SEC_VALUE"
+    write_setting "TTL_HOURS" "$TTL_HOURS_VALUE"
+    write_setting "RUN_IN_BACKGROUND" "$RUN_IN_BACKGROUND_VALUE"
+    write_setting "MAX_CONCURRENT" "$MAX_CONCURRENT_VALUE"
+    write_setting "COMMAND_TIMEOUT_SECS" "$COMMAND_TIMEOUT_SECS_VALUE"
+    write_setting "COMMAND_TIMEOUT_KILL_GRACE_SECS" "$COMMAND_TIMEOUT_KILL_GRACE_SECS_VALUE"
+    write_setting "PUBLISH_LOGS" "$PUBLISH_LOGS_VALUE"
+    write_setting "EMAIL_ON_START" "$EMAIL_ON_START_VALUE"
+    write_setting "FINISH_MARGIN_SECONDS" "$FINISH_MARGIN_SECONDS_VALUE"
+  fi
+  if depth_is_at_least "advanced-all"; then
+    write_setting "COMMAND_CHANNEL_LOG_DIR" "$COMMAND_CHANNEL_LOG_DIR_VALUE"
+    write_setting "RCLONE_CONFIG" "$RCLONE_CONFIG_VALUE"
+    write_setting "RCLONE_EXTRA_FLAGS" "$RCLONE_EXTRA_FLAGS_VALUE"
+    write_setting "SYNC_INCLUDE_GLOBS" "$SYNC_INCLUDE_GLOBS_VALUE"
+    write_setting "SYNC_EXCLUDES" "$SYNC_EXCLUDES_VALUE"
+    write_setting "TIMEOUT_REQUEUE_TO_BG" "$TIMEOUT_REQUEUE_TO_BG_VALUE"
+    write_setting "COMMAND_SNAPSHOT_MAX_ATTEMPTS" "$COMMAND_SNAPSHOT_MAX_ATTEMPTS_VALUE"
+    write_setting "COMMAND_SNAPSHOT_SETTLE_SECS" "$COMMAND_SNAPSHOT_SETTLE_SECS_VALUE"
+    write_setting "LOG_DIR" "$LOG_DIR_VALUE"
+    write_setting "STATE_DIR" "$STATE_DIR_VALUE"
+    write_setting "RELAY_LOG_FILE" "$RELAY_LOG_FILE_VALUE"
+    write_setting "COMMAND_OUTPUT_LOG_FILE" "$COMMAND_OUTPUT_LOG_FILE_VALUE"
+    write_setting "COMMAND_HISTORY_FILE" "$COMMAND_HISTORY_FILE_VALUE"
+    write_setting "SUPERVISOR_LOG_FILE" "$SUPERVISOR_LOG_FILE_VALUE"
+    write_setting "SYNC_LOG_FILE" "$SYNC_LOG_FILE_VALUE"
+    write_setting "EMAIL_LOG_FILE" "$EMAIL_LOG_FILE_VALUE"
+    write_setting "WRITE_COMMAND_HISTORY" "$WRITE_COMMAND_HISTORY_VALUE"
+    write_setting "INCLUDE_COMMAND_SNAPSHOT_IN_CMD_LOG" "$INCLUDE_COMMAND_SNAPSHOT_IN_CMD_LOG_VALUE"
+    write_setting "RELAY_PID_FILE" "$RELAY_PID_FILE_VALUE"
+    write_setting "RELAY_LOCK_FILE" "$RELAY_LOCK_FILE_VALUE"
+    write_setting "SUPERVISOR_LOCK_FILE" "$SUPERVISOR_LOCK_FILE_VALUE"
+    write_setting "PREVIOUS_COMMAND_SCRIPT" "$PREVIOUS_COMMAND_SCRIPT_VALUE"
+    write_setting "PIDS_DIR" "$PIDS_DIR_VALUE"
+    write_setting "RCLONE_CACHE_DIR" "$RCLONE_CACHE_DIR_VALUE"
+    write_setting "JOB_NOTIFICATION_NAME" "$JOB_NOTIFICATION_NAME_VALUE"
+    write_setting "EMAIL_LOCKFILE" "$EMAIL_LOCKFILE_VALUE"
+    write_setting "EMAIL_SENTINEL_FILE" "$EMAIL_SENTINEL_FILE_VALUE"
+    write_setting "MAIL_LOG_FILES" "$MAIL_LOG_FILES_VALUE"
+    write_setting "SLURM_TIME_TZ" "$SLURM_TIME_TZ_VALUE"
+    write_setting "REPORT_TZ_ET" "$REPORT_TZ_ET_VALUE"
+    write_setting "REPORT_TZ_GMT" "$REPORT_TZ_GMT_VALUE"
+  fi
+  chmod 600 "$ENV_FILE"
 
 cat <<'EOF'
 EOF
@@ -179,6 +377,9 @@ Note:
 - configure.sh does not create the remote HPC project or mount directories.
 - Those paths are stored as configuration only.
 - The runtime scripts create writable runtime directories on the machine where the relay actually runs.
+- Basic mode writes the core project config through the SMTP password prompt.
+- Advanced mode writes the core project config plus the normal runtime tuning block.
+- Advanced-all writes the core config, the normal tuning block, and every explicit path/log/state/reporting override prompt.
 - You must create the shared Drive command file yourself as ${COMMAND_FILE_NAME_VALUE}.
 - The relay will not auto-create the command file.
 

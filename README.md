@@ -41,7 +41,7 @@ It is designed for this workflow:
 - `job_supervisor.sh`
   Slurm/HPC watchdog that also launches email notifications.
 - `job_notifier.sh`
-  Sends start and finish emails from inside a Slurm job.
+  Sends start and finish emails inside Slurm, or a standalone project-start summary when Slurm is not detected.
 - `repair_mount.sh`
   Cleans up a broken or stale mount.
 
@@ -91,6 +91,15 @@ Create or update that project instance with:
 ./configure.sh --project my_project
 ```
 
+`configure.sh` now supports three project configuration depths:
+
+- `basic`
+  Prompts only through `Password file for SMTP app password [...]` and writes the core project settings.
+- `advanced`
+  Prompts for the core settings plus the normal runtime tuning block. This is the default behavior.
+- `advanced-all`
+  Prompts for the core settings, the normal runtime tuning block, and the full set of explicit path, log, cache, state, and reporting overrides.
+
 This means a user can keep committed project defaults in git, but still override selected values on the HPC before launch, for example:
 
 ```bash
@@ -123,7 +132,17 @@ What the user should normally set:
 - `MIRROR_REMOTE_SUBDIR`
 - `NOTIFIER_PASSWORD_FILE`
 
-Useful tuning knobs that can now be set during `./configure.sh --project ...`:
+For KNUST / ARC usage on the HPC:
+
+- enter `/home/achenie/.secrets/notifier_gmail_app_password` when `configure.sh` prompts for `Password file for SMTP app password`
+- or press Enter to accept the default path if the prompt already shows it
+
+For the Virginia Tech HPC when `configure.sh` prompts for the rclone remote:
+
+- use `gdriveN:` for the shared Google Drive remote
+- do not use a personal rclone remote there, because the HPC relay uses that remote to access the shared command-channel and mirror folders
+
+Useful tuning knobs that can now be set during `./configure.sh --project ...` in `advanced` or `advanced-all` mode:
 
 - `SLEEP_SECS`
   Relay polling interval for checking command-file changes.
@@ -409,9 +428,21 @@ cd rclone_remote_pilot
 ./configure.sh --project demo_project
 ```
 
+At the start of the prompt flow, choose a configuration depth:
+
+- `basic`
+  Stops after the SMTP password-file prompt and writes only the core project settings.
+- `advanced`
+  Continues into the runtime-tuning prompts shown below.
+- `advanced-all`
+  Continues past the runtime-tuning prompts into the full override block for logs, cache, state, command-history behavior, and reporting paths.
+
+For the Virginia Tech HPC, answer the `rclone remote name for that Drive account` prompt with `gdriveN:`.
+
 Example answers:
 
 ```text
+Configuration depth (basic|advanced|advanced-all) [advanced]: advanced
 Google Drive email to grant access to the shared folders [compucatalysis@gmail.com]:
 rclone remote name for that Drive account [gdrive:]: gdriveN:
 Main project directory on the remote system [...]: /home/achenie/KNUST_Student_Projects/kkasiedu/remote_pilot_demo_project
@@ -439,6 +470,13 @@ Seconds before walltime to stop relay / send final handling [60]:
 ```
 
 If you press Enter on a prompt with square brackets, that default is used.
+
+Important:
+
+- `basic` mode stops at the SMTP password-file prompt.
+- `advanced` mode continues into the runtime-tuning section shown above.
+- `advanced-all` continues into the full explicit override section.
+- You must create `commands.sh` yourself in the shared Google Drive command folder. The relay does not create it.
 
 Examples:
 
@@ -676,6 +714,8 @@ What happens:
 - `job_notifier.sh` is launched once for the job
 - a STARTED email is sent
 - a FINISHED email is sent when Slurm records the final state
+
+Outside Slurm, the same notifier can still send a single project-start summary email if the SMTP settings and password file are available. In that mode it reports the active project details, notes that no Slurm environment was detected, and includes the current log tails that actually exist.
 
 ## Important Runtime Notes
 
