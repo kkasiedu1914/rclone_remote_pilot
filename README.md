@@ -205,7 +205,12 @@ The parameters below are the ones most users are likely to adjust. They can be g
 - `COMMAND_CHANNEL_LOG_SUBDIR`
   Subdirectory under the mounted command folder where published logs go. Default is `logs`.
 - `COMMAND_CHANNEL_LOG_DIR`
-  Full publish destination for relay and supervisor logs. Defaults to `COMMAND_CHANNEL_MOUNT/logs`.
+  Full publish destination for relay, command, supervisor, sync, and email logs. Defaults to `COMMAND_CHANNEL_MOUNT/logs`.
+  This is the main folder users should open in the shared command channel to inspect command results and relay health.
+
+The relay captures the stdout and stderr of `commands.sh` into `COMMAND_OUTPUT_LOG_FILE`, which is published as
+`command-output.log` under `COMMAND_CHANNEL_LOG_DIR` when `PUBLISH_LOGS=1`. If a command does not redirect its
+own output to another file, its output appears in this default `command-output.log`.
 
 ### Relay Runtime
 
@@ -575,9 +580,15 @@ Expected behavior:
 
 The shared command file can be as simple or as detailed as you want. The relay only cares that it is an executable shell script. You can:
 
-- write everything to the standard `command-output.log`
+- write everything to the standard `command-output.log` by leaving stdout/stderr unredirected
 - also append your own summary lines to a small `cmd.log`
 - create separate log files for long-running background processes so the main command log stays readable
+
+By default, the relay runs `commands.sh` from `PROJECT_DIR` and appends the command's stdout and stderr to
+`command-output.log`. That file is published back to the shared command channel at
+`$COMMAND_CHANNEL_MOUNT/logs/command-output.log`, so users should normally check the command-channel `logs/`
+folder first after sending a command. The same folder also receives relay-managed logs such as `relay.log`,
+`command-history.log`, `supervisor.log`, `sync.log`, and `email.log` when those files exist.
 
 Simple foreground example:
 
@@ -635,6 +646,7 @@ Recommended practice:
 - let the relay-managed `command-output.log` capture the full shell transcript
 - use `cmd.log` only for short status lines if you want a cleaner summary
 - send especially noisy or long-running processes to dedicated log files such as `train.stdout.log` or `outputs/train_worker.log`
+- copy any custom summary log such as `cmd.log` into `$COMMAND_CHANNEL_MOUNT/logs/` when you want it visible beside the relay logs
 - keep custom logs inside the project directory if you want them to be picked up by `sync_mirror.sh`
 
 ### 8b. Sending files to the remote machine
