@@ -80,18 +80,8 @@ publish_logs() {
   done
 }
 
-ensure_command_script_placeholder() {
-  local command_dir=""
-  command_dir="$(dirname "$COMMAND_SCRIPT_IN")"
-  mkdir -p "$command_dir" 2>/dev/null || true
-
-  if [[ ! -e "$COMMAND_SCRIPT_IN" ]]; then
-    : > "$COMMAND_SCRIPT_IN" 2>/dev/null || {
-      log "WARN: failed to create placeholder command file at $COMMAND_SCRIPT_IN"
-      return 1
-    }
-    log "Created placeholder command file at $COMMAND_SCRIPT_IN"
-  fi
+log_missing_command_script() {
+  log "WARN: command file is missing on the mounted channel; create it from the shared Drive folder before expecting commands to run: $COMMAND_SCRIPT_IN"
 }
 
 append_to_history() {
@@ -230,6 +220,65 @@ same_content() {
   fi
 }
 
+contains_nul_bytes() {
+  local file_path="$1"
+  local stripped_copy=""
+  stripped_copy="$(mktemp "$STATE_DIR/.nulcheck.XXXXXX")" || return 1
+  tr -d '\000' < "$file_path" > "$stripped_copy"
+  if cmp -s "$file_path" "$stripped_copy"; then
+    rm -f "$stripped_copy" 2>/dev/null || true
+    return 1
+  fi
+  rm -f "$stripped_copy" 2>/dev/null || true
+  return 0
+}
+
+snapshot_fingerprint() {
+  local file_path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file_path" | awk '{print $1}'
+  else
+    wc -c < "$file_path" | awk '{print $1}'
+  fi
+}
+
+capture_command_snapshot() {
+  local source_path="$1"
+  local snapshot_path="$2"
+  local tmp_snapshot=""
+  local previous_fingerprint=""
+  local current_fingerprint=""
+  local attempts=0
+
+  tmp_snapshot="$(mktemp "$STATE_DIR/.commands.snapshot.XXXXXX.sh")" || return 1
+
+  while (( attempts < COMMAND_SNAPSHOT_MAX_ATTEMPTS )); do
+    attempts=$((attempts + 1))
+    cp -f "$source_path" "$tmp_snapshot" 2>/dev/null || true
+
+    if [[ ! -s "$tmp_snapshot" ]]; then
+      log "WARN: snapshot attempt $attempts for $source_path produced an empty file"
+    elif contains_nul_bytes "$tmp_snapshot"; then
+      log "WARN: snapshot attempt $attempts for $source_path contained NUL bytes"
+    else
+      current_fingerprint="$(snapshot_fingerprint "$tmp_snapshot")"
+      if [[ -n "$previous_fingerprint" && "$current_fingerprint" == "$previous_fingerprint" ]]; then
+        mv -f "$tmp_snapshot" "$snapshot_path"
+        chmod +x "$snapshot_path" 2>/dev/null || true
+        return 0
+      fi
+      previous_fingerprint="$current_fingerprint"
+    fi
+
+    : > "$tmp_snapshot"
+    sleep "$COMMAND_SNAPSHOT_SETTLE_SECS"
+  done
+
+  rm -f "$tmp_snapshot" 2>/dev/null || true
+  log "WARN: unable to capture a stable commands.sh snapshot after ${COMMAND_SNAPSHOT_MAX_ATTEMPTS} attempts"
+  return 1
+}
+
 check_and_mount() {
   local remote="$1"
   local mount_point="$2"
@@ -337,7 +386,9 @@ fi
 if ! ensure_command_channel_ready; then
   exit 1
 fi
-ensure_command_script_placeholder || true
+if [[ ! -e "$COMMAND_SCRIPT_IN" ]]; then
+  log_missing_command_script
+fi
 
 log "=== relay starting in $WORK_DIR ==="
 log "Project name: $PROJECT_NAME"
@@ -364,8 +415,11 @@ while [[ "$SHOULD_EXIT" -eq 0 ]]; do
       else
         run_id="$(date +%Y%m%dT%H%M%S).$$.$RANDOM"
         script_snapshot="$(mktemp "$STATE_DIR/.commands.${run_id}.XXXXXX.sh")"
-        cp -f "$COMMAND_SCRIPT_IN" "$script_snapshot"
-        chmod +x "$script_snapshot" 2>/dev/null || true
+        if ! capture_command_snapshot "$COMMAND_SCRIPT_IN" "$script_snapshot"; then
+          rm -f "$script_snapshot" 2>/dev/null || true
+          log "WARN: skipping execution because commands.sh never settled into a valid snapshot"
+          continue
+        fi
 
         append_to_history "$script_snapshot"
         cp -f "$script_snapshot" "$PREVIOUS_COMMAND_SCRIPT"
@@ -383,7 +437,9 @@ while [[ "$SHOULD_EXIT" -eq 0 ]]; do
     fi
   else
     if [[ ! -e "$COMMAND_SCRIPT_IN" ]]; then
-      ensure_command_script_placeholder || true
+      if (( loop_count == 1 || loop_count % 60 == 0 )); then
+        log_missing_command_script
+      fi
     fi
   fi
 

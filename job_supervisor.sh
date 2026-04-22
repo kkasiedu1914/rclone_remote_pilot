@@ -16,6 +16,12 @@ NOTIFIER_SCRIPT="$PROJ/job_notifier.sh"
 MOUNT_REPAIR_SCRIPT="$PROJ/repair_mount.sh"
 RUN_OUT="$STATE_DIR/.relayctl.last.out"
 
+exec 8>"$SUPERVISOR_LOCK_FILE"
+if ! flock -n 8; then
+  printf '[%s] %s\n' "$(date -Is)" "supervisor already running; lock=$SUPERVISOR_LOCK_FILE"
+  exit 0
+fi
+
 if [[ -z "${SLURM_JOB_NAME:-}" || "${SLURM_JOB_NAME:-}" == "unknown" || "${SLURM_JOB_NAME:-}" == "Unknown" || "${SLURM_JOB_NAME:-}" == "UNKNOWN" ]]; then
   export SLURM_JOB_NAME="$JOB_NOTIFICATION_NAME"
 fi
@@ -130,12 +136,7 @@ while (( stop_requested == 0 )); do
     status="OK"
     if [[ "$EMAIL_ON_START" == "1" && ! -f "$EMAIL_SENTINEL_FILE" ]]; then
       if [[ -x "$NOTIFIER_SCRIPT" ]]; then
-        (
-          bash "$NOTIFIER_SCRIPT" || {
-            rc=$?
-            log "WARN job_notifier.sh exited non-zero (exit_code=$rc); see $EMAIL_LOG_FILE for details"
-          }
-        ) &
+        (bash "$NOTIFIER_SCRIPT" >/dev/null 2>&1 || log "WARN job_notifier.sh exited non-zero") &
         touch "$EMAIL_SENTINEL_FILE" 2>/dev/null || true
         log "INFO job_notifier.sh launched once; sentinel=$EMAIL_SENTINEL_FILE"
       elif (( email_missing_warned == 0 )); then

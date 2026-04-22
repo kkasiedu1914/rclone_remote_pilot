@@ -142,7 +142,7 @@ Resolution order:
 - `FINISH_MARGIN_SECONDS`
   Margin before walltime for cleanup.
 - `MAIL_LOG_FILES`
-  Space-separated list of log files tailed into notification emails.
+  Space-separated list of log files tailed into notification emails. Missing entries, including unavailable Slurm stdout files, are skipped.
 - `SLURM_TIME_TZ`
   Time zone used to parse Slurm timestamps.
 - `REPORT_TZ_ET`

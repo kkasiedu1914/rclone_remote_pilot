@@ -91,8 +91,24 @@ projects/my_project.local.env
 
 That local override file stays ignored by git.
 
+`configure.sh` supports three project configuration depths:
+
+- `basic`
+  Prompts only through `Password file for SMTP app password [...]` and writes the core project settings.
+- `advanced`
+  Prompts for the core settings plus the normal runtime tuning block. This is the default.
+- `advanced-all`
+  Prompts for the core settings, the normal runtime tuning block, and all explicit runtime overrides including logs, cache, state, and reporting paths.
+
 Important prompts:
 
+- `Configuration depth (basic|advanced|advanced-all)`
+  - `basic` stops after the SMTP password-file prompt
+  - `advanced` continues into the standard tuning prompts
+  - `advanced-all` continues into all explicit override prompts
+- `rclone remote name for that Drive account`
+  - on the Virginia Tech HPC, use `gdriveN:`
+  - do not use a personal rclone remote there, because the relay uses this remote to reach the shared command-channel and mirror folders
 - `Main project directory on the remote system`
   - example: `/scratch/alice/project_a`
 - `Google Drive folder ID for the shared command channel`
@@ -108,9 +124,12 @@ Important prompts:
 - `NOTIFICATION_TO_SECONDARY`
   - default: `achenie@vt.edu`
 - `NOTIFIER_PASSWORD_FILE`
-  - default: `$HOME/.secrets/remote_pilot_gmail_app_password`
+  - default: `$HOME/.secrets/notifier_gmail_app_password`
+- `COMMAND_FILE_NAME`
+  - default: `commands.sh`
+  - create this file yourself in the shared Google Drive command folder before starting the relay
 
-For ARC / VT-style usage, the sender and VT secondary recipient already default to the original values. The user mainly needs to set the primary recipient and make sure the password file exists on the HPC.
+For ARC / VT-style usage, the sender and VT secondary recipient already default to the original values. The user mainly needs to set the primary recipient and make sure the password file exists on the HPC at `/home/achenie/.secrets/notifier_gmail_app_password`, or accept the default path shown by `configure.sh`.
 
 ## 6. Understand the config resolution
 
@@ -161,7 +180,7 @@ What happens:
 1. The active project is selected from `REMOTE_PILOT_PROJECT`.
 2. The relay loads that project’s config file.
 3. The relay mounts the shared command channel if needed.
-4. It watches `commands.sh`.
+4. It expects `commands.sh` to already exist in the shared Drive folder.
 5. When `commands.sh` changes, it copies a snapshot locally and runs it from `PROJECT_DIR`.
 6. It republishes logs to `command-channel/logs/`.
 
@@ -216,8 +235,8 @@ Optional notification setup:
 ```bash
 mkdir -p ~/.secrets
 chmod 700 ~/.secrets
-printf '%s\n' 'your-app-password' > ~/.secrets/remote_pilot_gmail_app_password
-chmod 600 ~/.secrets/remote_pilot_gmail_app_password
+printf '%s\n' 'your-app-password' > ~/.secrets/notifier_gmail_app_password
+chmod 600 ~/.secrets/notifier_gmail_app_password
 ```
 
 Then set:
@@ -301,3 +320,12 @@ If mirroring fails:
 1. Confirm `MIRROR_ROOT_FOLDER_ID` is correct
 2. Confirm the Drive account behind `RCLONE_REMOTE` can write there
 3. Check the per-project sync log under `.remote-pilot/<project>/logs/`
+
+If the mounted command folder differs from the actual Drive folder contents:
+
+1. Stop `job_supervisor.sh`, `job_notifier.sh`, and `relay.sh`
+2. Run `./relayctl.sh stop || true`
+3. Run `./repair_mount.sh`
+4. Clear `.remote-pilot/<project>/state/rclone-cache`
+5. Restart the relay or supervisor
+6. If the remote checkout still behaves inconsistently, clear that remote project copy or pull a fresh copy of `rclone_remote_pilot` and rebuild the per-project state

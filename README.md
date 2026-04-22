@@ -21,7 +21,7 @@ It is designed for this workflow:
 
 - mounts a shared Google Drive command folder with `rclone mount`
 - watches a configurable command file such as `commands.sh`
-- auto-creates that watched command file if it is missing
+- expects the watched command file to already exist in the shared Drive folder
 - runs command scripts from the configured `PROJECT_DIR`
 - republishes logs back into the shared command folder
 - mirrors project outputs to a separate shared Drive folder
@@ -41,7 +41,7 @@ It is designed for this workflow:
 - `job_supervisor.sh`
   Slurm/HPC watchdog that also launches email notifications.
 - `job_notifier.sh`
-  Sends start and finish emails from inside a Slurm job.
+  Sends start and finish emails inside Slurm, or a standalone project-start summary when Slurm is not detected.
 - `repair_mount.sh`
   Cleans up a broken or stale mount.
 
@@ -56,6 +56,12 @@ Legacy wrappers and older reference material are in `legacy/`:
 - `legacy/VT remote piloting system.md`
 
 For new use, prefer the top-level generic scripts only.
+
+## Runtime Working Directory
+
+Run the runtime scripts from inside the `rclone_remote_pilot` directory.
+
+The project repository itself may live in a parent directory, but commands such as `relayctl.sh`, `job_supervisor.sh`, and `sync_mirror.sh` should not be launched from that parent with paths like `bash rclone_remote_pilot/relayctl.sh ...`. Those launches can fail because supporting files are resolved relative to the pilot directory.
 
 ## Configuration Model
 
@@ -85,14 +91,24 @@ Create or update that project instance with:
 ./configure.sh --project my_project
 ```
 
+`configure.sh` now supports three project configuration depths:
+
+- `basic`
+  Prompts only through `Password file for SMTP app password [...]` and writes the core project settings.
+- `advanced`
+  Prompts for the core settings plus the normal runtime tuning block. This is the default behavior.
+- `advanced-all`
+  Prompts for the core settings, the normal runtime tuning block, and the full set of explicit path, log, cache, state, and reporting overrides.
+
 This means a user can keep committed project defaults in git, but still override selected values on the HPC before launch, for example:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=my_project
 export SLEEP_SECS=5
 export INTERVAL_SEC=60
 export RUN_IN_BACKGROUND=0
-bash rclone_remote_pilot/relayctl.sh start
+./relayctl.sh start
 ```
 
 ## KNUST / ARC Defaults
@@ -116,7 +132,17 @@ What the user should normally set:
 - `MIRROR_REMOTE_SUBDIR`
 - `NOTIFIER_PASSWORD_FILE`
 
-Useful tuning knobs that can now be set during `./configure.sh --project ...`:
+For KNUST / ARC usage on the HPC:
+
+- enter `/home/achenie/.secrets/notifier_gmail_app_password` when `configure.sh` prompts for `Password file for SMTP app password`
+- or press Enter to accept the default path if the prompt already shows it
+
+For the Virginia Tech HPC when `configure.sh` prompts for the rclone remote:
+
+- use `gdriveN:` for the shared Google Drive remote
+- do not use a personal rclone remote there, because the HPC relay uses that remote to access the shared command-channel and mirror folders
+
+Useful tuning knobs that can now be set during `./configure.sh --project ...` in `advanced` or `advanced-all` mode:
 
 - `SLEEP_SECS`
   Relay polling interval for checking command-file changes.
@@ -179,7 +205,12 @@ The parameters below are the ones most users are likely to adjust. They can be g
 - `COMMAND_CHANNEL_LOG_SUBDIR`
   Subdirectory under the mounted command folder where published logs go. Default is `logs`.
 - `COMMAND_CHANNEL_LOG_DIR`
-  Full publish destination for relay and supervisor logs. Defaults to `COMMAND_CHANNEL_MOUNT/logs`.
+  Full publish destination for relay, command, supervisor, sync, and email logs. Defaults to `COMMAND_CHANNEL_MOUNT/logs`.
+  This is the main folder users should open in the shared command channel to inspect command results and relay health.
+
+The relay captures the stdout and stderr of `commands.sh` into `COMMAND_OUTPUT_LOG_FILE`, which is published as
+`command-output.log` under `COMMAND_CHANNEL_LOG_DIR` when `PUBLISH_LOGS=1`. If a command does not redirect its
+own output to another file, its output appears in this default `command-output.log`.
 
 ### Relay Runtime
 
@@ -218,11 +249,12 @@ The parameters below are the ones most users are likely to adjust. They can be g
 Users can override these before running `sync_mirror.sh`, for example:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export SYNC_INCLUDE_GLOBS="outputs/** checkpoints/** reports/** *.csv *.txt"
 export SYNC_EXCLUDES=".git/** .remote-pilot/** checkpoints/tmp/** *.tmp"
 export RCLONE_EXTRA_FLAGS="--fast-list --transfers=16 --checkers=16"
-bash rclone_remote_pilot/sync_mirror.sh
+./sync_mirror.sh
 ```
 
 ### Supervisor And Notifications
@@ -288,53 +320,59 @@ These are useful when the user wants temporary behavior changes on the HPC witho
 Fast command turnaround:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export SLEEP_SECS=5
-bash rclone_remote_pilot/relayctl.sh restart
+./relayctl.sh restart
 ```
 
 Foreground-first execution with timeout fallback:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export RUN_IN_BACKGROUND=0
 export COMMAND_TIMEOUT_SECS=240
 export TIMEOUT_REQUEUE_TO_BG=1
-bash rclone_remote_pilot/relayctl.sh restart
+./relayctl.sh restart
 ```
 
 Frequent supervisor checks during debugging:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export INTERVAL_SEC=60
-bash rclone_remote_pilot/job_supervisor.sh
+./job_supervisor.sh
 ```
 
 Disable published logs temporarily:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export PUBLISH_LOGS=0
-bash rclone_remote_pilot/relayctl.sh restart
+./relayctl.sh restart
 ```
 
 Use a different command filename for one session:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export COMMAND_FILE_NAME=achenie.sh
-bash rclone_remote_pilot/relayctl.sh restart
+./relayctl.sh restart
 ```
 
 Change mirror filters for one sync run:
 
 ```bash
+cd rclone_remote_pilot
 export REMOTE_PILOT_PROJECT=demo_project
 export SYNC_INCLUDE_GLOBS="outputs/** artifacts/** *.csv *.parquet"
 export SYNC_EXCLUDES=".git/** .remote-pilot/** artifacts/tmp/**"
 export RCLONE_EXTRA_FLAGS="--fast-list --transfers=16 --checkers=16"
-bash rclone_remote_pilot/sync_mirror.sh
+./sync_mirror.sh
 ```
 
 ## Secrets Note
@@ -395,9 +433,21 @@ cd rclone_remote_pilot
 ./configure.sh --project demo_project
 ```
 
+At the start of the prompt flow, choose a configuration depth:
+
+- `basic`
+  Stops after the SMTP password-file prompt and writes only the core project settings.
+- `advanced`
+  Continues into the runtime-tuning prompts shown below.
+- `advanced-all`
+  Continues past the runtime-tuning prompts into the full override block for logs, cache, state, command-history behavior, and reporting paths.
+
+For the Virginia Tech HPC, answer the `rclone remote name for that Drive account` prompt with `gdriveN:`.
+
 Example answers:
 
 ```text
+Configuration depth (basic|advanced|advanced-all) [advanced]: advanced
 Google Drive email to grant access to the shared folders [compucatalysis@gmail.com]:
 rclone remote name for that Drive account [gdrive:]: gdriveN:
 Main project directory on the remote system [...]: /home/achenie/KNUST_Student_Projects/kkasiedu/remote_pilot_demo_project
@@ -425,6 +475,13 @@ Seconds before walltime to stop relay / send final handling [60]:
 ```
 
 If you press Enter on a prompt with square brackets, that default is used.
+
+Important:
+
+- `basic` mode stops at the SMTP password-file prompt.
+- `advanced` mode continues into the runtime-tuning section shown above.
+- `advanced-all` continues into the full explicit override section.
+- You must create `commands.sh` yourself in the shared Google Drive command folder. The relay does not create it.
 
 Examples:
 
@@ -488,15 +545,15 @@ When the relay starts:
 - runtime directories are created under:
   `<PROJECT_DIR>/.remote-pilot/demo_project/`
 - the command channel mount directory is created if needed
-- the watched command file is created if it does not already exist
+- the watched command file must already exist in the shared Drive folder
 
-For this example, that means the relay will ensure:
+For this example, that means the relay expects:
 
 ```text
 /home/achenie/KNUST_Student_Projects/kkasiedu/commands-channel/commands.sh
 ```
 
-exists, even if it starts empty.
+to already exist in Google Drive before the relay starts.
 
 ### 8. User sends a test command
 
@@ -523,9 +580,15 @@ Expected behavior:
 
 The shared command file can be as simple or as detailed as you want. The relay only cares that it is an executable shell script. You can:
 
-- write everything to the standard `command-output.log`
+- write everything to the standard `command-output.log` by leaving stdout/stderr unredirected
 - also append your own summary lines to a small `cmd.log`
 - create separate log files for long-running background processes so the main command log stays readable
+
+By default, the relay runs `commands.sh` from `PROJECT_DIR` and appends the command's stdout and stderr to
+`command-output.log`. That file is published back to the shared command channel at
+`$COMMAND_CHANNEL_MOUNT/logs/command-output.log`, so users should normally check the command-channel `logs/`
+folder first after sending a command. The same folder also receives relay-managed logs such as `relay.log`,
+`command-history.log`, `supervisor.log`, `sync.log`, and `email.log` when those files exist.
 
 Simple foreground example:
 
@@ -583,6 +646,7 @@ Recommended practice:
 - let the relay-managed `command-output.log` capture the full shell transcript
 - use `cmd.log` only for short status lines if you want a cleaner summary
 - send especially noisy or long-running processes to dedicated log files such as `train.stdout.log` or `outputs/train_worker.log`
+- copy any custom summary log such as `cmd.log` into `$COMMAND_CHANNEL_MOUNT/logs/` when you want it visible beside the relay logs
 - keep custom logs inside the project directory if you want them to be picked up by `sync_mirror.sh`
 
 ### 8b. Sending files to the remote machine
@@ -663,6 +727,8 @@ What happens:
 - a STARTED email is sent
 - a FINISHED email is sent when Slurm records the final state
 
+Outside Slurm, the same notifier can still send a single project-start summary email if the SMTP settings and password file are available. In that mode it reports the active project details, notes that no Slurm environment was detected, and includes the current log tails that actually exist.
+
 ## Important Runtime Notes
 
 - `configure.sh` stores remote HPC paths as configuration only.
@@ -723,3 +789,5 @@ Run Slurm monitoring:
 
 - `send_email.py` is the SMTP helper used by `job_notifier.sh`.
 - `legacy/monitor_gpu_restart.sh` is not required for the core relay workflow.
+- `commands.sh` must be created from the shared Drive side. The relay no longer creates it locally.
+- If the mounted command folder diverges from Drive state, stop the relay, run `./repair_mount.sh`, clear `.remote-pilot/<project>/state/rclone-cache`, and then restart.

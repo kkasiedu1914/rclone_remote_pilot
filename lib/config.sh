@@ -30,6 +30,11 @@ load_project_env() {
     project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
   fi
 
+  local caller_selected_project="${REMOTE_PILOT_PROJECT:-}"
+  local caller_selected_project_env_dir="${REMOTE_PILOT_PROJECT_ENV_DIR:-}"
+  local caller_selected_project_file="${REMOTE_PILOT_PROJECT_FILE:-}"
+  local caller_selected_project_local_file="${REMOTE_PILOT_PROJECT_LOCAL_FILE:-}"
+
   local base_env_file="${REMOTE_PILOT_ENV_FILE:-$project_root/.env}"
   if [[ -f "$base_env_file" ]]; then
     set -a
@@ -42,11 +47,23 @@ load_project_env() {
   export PROJECT_ROOT="${PROJECT_ROOT:-$project_root}"
   export PROJECT_ENV_FILE="$base_env_file"
 
-  export REMOTE_PILOT_PROJECT="${REMOTE_PILOT_PROJECT:-${PROJECT_NAME:-default}}"
+  export REMOTE_PILOT_PROJECT="${caller_selected_project:-${REMOTE_PILOT_PROJECT:-${PROJECT_NAME:-default}}}"
   export REMOTE_PILOT_PROJECT_PREFIX="$(normalize_project_prefix "$REMOTE_PILOT_PROJECT")"
-  export REMOTE_PILOT_PROJECT_ENV_DIR="${REMOTE_PILOT_PROJECT_ENV_DIR:-$REMOTE_PILOT_HOME/projects}"
-  export REMOTE_PILOT_PROJECT_FILE="${REMOTE_PILOT_PROJECT_FILE:-$REMOTE_PILOT_PROJECT_ENV_DIR/${REMOTE_PILOT_PROJECT}.env}"
-  export REMOTE_PILOT_PROJECT_LOCAL_FILE="${REMOTE_PILOT_PROJECT_LOCAL_FILE:-$REMOTE_PILOT_PROJECT_ENV_DIR/${REMOTE_PILOT_PROJECT}.local.env}"
+  local default_project_env_dir="$REMOTE_PILOT_HOME/projects"
+  export REMOTE_PILOT_PROJECT_ENV_DIR="${caller_selected_project_env_dir:-${REMOTE_PILOT_PROJECT_ENV_DIR:-$default_project_env_dir}}"
+  export REMOTE_PILOT_PROJECT_FILE="${caller_selected_project_file:-${REMOTE_PILOT_PROJECT_FILE:-$REMOTE_PILOT_PROJECT_ENV_DIR/${REMOTE_PILOT_PROJECT}.env}}"
+  export REMOTE_PILOT_PROJECT_LOCAL_FILE="${caller_selected_project_local_file:-${REMOTE_PILOT_PROJECT_LOCAL_FILE:-$REMOTE_PILOT_PROJECT_ENV_DIR/${REMOTE_PILOT_PROJECT}.local.env}}"
+
+  # Recover from stale global config that points the project env dir outside the pilot repo.
+  if [[ ! -f "$REMOTE_PILOT_PROJECT_FILE" && "$REMOTE_PILOT_PROJECT_ENV_DIR" != "$default_project_env_dir" ]]; then
+    local fallback_project_file="$default_project_env_dir/${REMOTE_PILOT_PROJECT}.env"
+    local fallback_project_local_file="$default_project_env_dir/${REMOTE_PILOT_PROJECT}.local.env"
+    if [[ -f "$fallback_project_file" || -f "$fallback_project_local_file" ]]; then
+      export REMOTE_PILOT_PROJECT_ENV_DIR="$default_project_env_dir"
+      export REMOTE_PILOT_PROJECT_FILE="$fallback_project_file"
+      export REMOTE_PILOT_PROJECT_LOCAL_FILE="$fallback_project_local_file"
+    fi
+  fi
 
   if [[ -f "$REMOTE_PILOT_PROJECT_FILE" ]]; then
     set -a
@@ -86,6 +103,22 @@ load_project_env() {
   export RCLONE_REMOTE="$(first_defined_value "" "${pref}_RCLONE_REMOTE" RCLONE_REMOTE OUT_REMOTE)"
   export MIRROR_REMOTE_SUBDIR="$(first_defined_value "$REMOTE_PILOT_PROJECT/$host_tag" "${pref}_MIRROR_REMOTE_SUBDIR" MIRROR_REMOTE_SUBDIR OUT_REMOTE_SUBDIR)"
 
+  if [[ -n "$RCLONE_REMOTE" && "$RCLONE_REMOTE" != *: ]]; then
+    case "$RCLONE_REMOTE" in
+      /*|./*|../*)
+        ;;
+      *)
+        printf '%s\n' \
+          "WARN: detected RCLONE_REMOTE without trailing colon: $RCLONE_REMOTE" \
+          "WARN: normalizing to ${RCLONE_REMOTE}: so rclone treats it as a named remote, not a local path" \
+          "WARN: base env file: $PROJECT_ENV_FILE" \
+          "WARN: project env file: $REMOTE_PILOT_PROJECT_FILE" \
+          "WARN: project name: $REMOTE_PILOT_PROJECT" >&2
+        export RCLONE_REMOTE="${RCLONE_REMOTE}:"
+        ;;
+    esac
+  fi
+
   local rclone_config_value=""
   rclone_config_value="$(first_defined_value "" "${pref}_RCLONE_CONFIG" RCLONE_CONFIG)"
   if [[ -n "$rclone_config_value" ]]; then
@@ -104,6 +137,8 @@ load_project_env() {
   export COMMAND_TIMEOUT_KILL_GRACE_SECS="$(first_defined_value "30" "${pref}_COMMAND_TIMEOUT_KILL_GRACE_SECS" COMMAND_TIMEOUT_KILL_GRACE_SECS)"
   export TIMEOUT_REQUEUE_TO_BG="$(first_defined_value "1" "${pref}_TIMEOUT_REQUEUE_TO_BG" TIMEOUT_REQUEUE_TO_BG)"
   export PUBLISH_LOGS="$(first_defined_value "1" "${pref}_PUBLISH_LOGS" PUBLISH_LOGS)"
+  export COMMAND_SNAPSHOT_MAX_ATTEMPTS="$(first_defined_value "5" "${pref}_COMMAND_SNAPSHOT_MAX_ATTEMPTS" COMMAND_SNAPSHOT_MAX_ATTEMPTS)"
+  export COMMAND_SNAPSHOT_SETTLE_SECS="$(first_defined_value "2" "${pref}_COMMAND_SNAPSHOT_SETTLE_SECS" COMMAND_SNAPSHOT_SETTLE_SECS)"
 
   export RELAY_LOG_FILE="$(first_defined_value "$LOG_DIR/relay.log" "${pref}_RELAY_LOG_FILE" RELAY_LOG_FILE)"
   export COMMAND_OUTPUT_LOG_FILE="$(first_defined_value "$LOG_DIR/command-output.log" "${pref}_COMMAND_OUTPUT_LOG_FILE" COMMAND_OUTPUT_LOG_FILE CMD_LOG_FILE)"
@@ -114,6 +149,7 @@ load_project_env() {
 
   export RELAY_PID_FILE="$(first_defined_value "$STATE_DIR/relay.pid" "${pref}_RELAY_PID_FILE" RELAY_PID_FILE)"
   export RELAY_LOCK_FILE="$(first_defined_value "$STATE_DIR/relay.lock" "${pref}_RELAY_LOCK_FILE" RELAY_LOCK_FILE)"
+  export SUPERVISOR_LOCK_FILE="$(first_defined_value "$STATE_DIR/supervisor.lock" "${pref}_SUPERVISOR_LOCK_FILE" SUPERVISOR_LOCK_FILE)"
   export PREVIOUS_COMMAND_SCRIPT="$(first_defined_value "$STATE_DIR/commands.prev.sh" "${pref}_PREVIOUS_COMMAND_SCRIPT" PREVIOUS_COMMAND_SCRIPT)"
   export PIDS_DIR="$(first_defined_value "$STATE_DIR/relay-jobs" "${pref}_PIDS_DIR" PIDS_DIR)"
   export RCLONE_CACHE_DIR="$(first_defined_value "$STATE_DIR/rclone-cache" "${pref}_RCLONE_CACHE_DIR" RCLONE_CACHE_DIR)"
