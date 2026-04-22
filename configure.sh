@@ -112,7 +112,7 @@ write_setting() {
   printf '%s=%q\n' "$key" "$value" >> "$ENV_FILE"
 }
 
-default_remote="${RCLONE_REMOTE:-gdrive:}"
+default_remote="${RCLONE_REMOTE:-gdriveN:}"
 
 if [[ "$CONFIG_MODE" == "global" ]]; then
   echo "Remote Pilot global configuration"
