@@ -1,6 +1,6 @@
 # rclone_remote_pilot
 
-`rclone_remote_pilot` is a command relay for running work on a remote Linux or HPC project through a shared Google Drive folder.
+`rclone_remote_pilot` is a command relay for remote-piloting an HPC, lab server, cloud VM, or other remote Linux desktop through a shared Google Drive folder.
 
 Reference docs live in `docs/`:
 
@@ -16,6 +16,19 @@ It is designed for this workflow:
 4. The HPC operator selects the project instance and starts either:
    - the plain relay
    - the Slurm job supervisor with start and finish email notifications
+
+## Controller Machine vs HPC/Remote Machine
+
+There are two places involved:
+
+- Controller machine
+  The user's laptop, workstation, or local desktop. Use this side to create the shared Drive folders, run `configure.sh` if you want to generate `projects/<project>.env` locally, review and commit that config, and edit the shared Drive command file.
+- HPC/remote machine
+  The machine being piloted. This side must have the project checkout, the committed `projects/<project>.env`, any `projects/<project>.local.env` overrides, the `rclone` remote, the notifier password file, and every runtime script invocation such as `relayctl.sh`, `job_supervisor.sh`, `sync_mirror.sh`, and `repair_mount.sh`.
+
+The generated `projects/<project>.env` may be built on the controller machine, but it contains HPC/remote paths and must be committed, pushed, and pulled into the HPC/remote checkout before the relay or supervisor can use it. Machine-only overrides such as `projects/<project>.local.env` belong on the HPC/remote machine because they are loaded by scripts running there.
+
+The shared `commands.sh` file is usually edited from the controller side, but its contents execute on the HPC/remote machine from `PROJECT_DIR`. Use HPC/remote paths inside `commands.sh`. If a command depends on a helper config, restart/status file, or script, that file must be present on the HPC/remote filesystem or in the mounted command channel, not only on the user's laptop.
 
 ## What It Does
 
@@ -59,7 +72,7 @@ For new use, prefer the top-level generic scripts only.
 
 ## Runtime Working Directory
 
-Run the runtime scripts from inside the `rclone_remote_pilot` directory.
+Run the runtime scripts from inside the `rclone_remote_pilot` directory on the HPC/remote machine.
 
 The project repository itself may live in a parent directory, but commands such as `relayctl.sh`, `job_supervisor.sh`, and `sync_mirror.sh` should not be launched from that parent with paths like `bash rclone_remote_pilot/relayctl.sh ...`. Those launches can fail because supporting files are resolved relative to the pilot directory.
 
@@ -110,6 +123,8 @@ export INTERVAL_SEC=60
 export RUN_IN_BACKGROUND=0
 ./relayctl.sh start
 ```
+
+Runtime overrides only affect the machine where the scripts are started. For example, changing `SLEEP_SECS`, `INTERVAL_SEC`, `RUN_IN_BACKGROUND`, `COMMAND_FILE_NAME`, or `PUBLISH_LOGS` on the controller machine does not change a relay already running on the HPC. Put persistent HPC-only values in `projects/<project>.local.env` on the HPC, or export them in the HPC shell before starting or restarting `relayctl.sh` or `job_supervisor.sh`.
 
 ## KNUST / ARC Defaults
 

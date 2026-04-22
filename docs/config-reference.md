@@ -9,6 +9,14 @@ Resolution order:
 3. `projects/<project>.local.env`
 4. current shell exports
 
+## Where Configuration Lives
+
+`projects/<project>.env` may be generated on a controller machine, but it should contain HPC/remote paths and must be committed or otherwise copied into the HPC/remote checkout before runtime scripts can load it.
+
+`projects/<project>.local.env` is for the machine where the scripts run. In the normal remote-piloting workflow, that means the file belongs on the HPC/remote machine and stays out of git. Put host-specific paths, temporary restart/status tuning, and private runtime overrides there.
+
+Current shell exports are also local to the shell where they are set. Exporting `SLEEP_SECS=5` on a laptop does not affect an existing relay on the HPC. Export it on the HPC/remote machine and restart `relayctl.sh` or `job_supervisor.sh` there.
+
 ## Project Selection
 
 - `REMOTE_PILOT_PROJECT`

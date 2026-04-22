@@ -1,6 +1,8 @@
 # Operations
 
-Run these runtime commands from inside the `rclone_remote_pilot` directory. Do not launch them from the parent project directory with `bash rclone_remote_pilot/...`, because the pilot expects its supporting files relative to its own directory.
+Run these runtime commands from inside the `rclone_remote_pilot` directory on the HPC/remote machine. Do not launch them from the parent project directory with `bash rclone_remote_pilot/...`, because the pilot expects its supporting files relative to its own directory.
+
+The controller machine can edit `commands.sh` through the shared Drive folder, but `relayctl.sh`, `job_supervisor.sh`, `sync_mirror.sh`, `repair_mount.sh`, and any restart/status overrides are evaluated on the HPC/remote machine where the relay runs.
 
 ## Startup
 
@@ -97,6 +99,13 @@ $COMMAND_CHANNEL_MOUNT/$COMMAND_FILE_NAME
 ```
 
 That file must already exist in the shared Drive folder. The relay does not create it.
+
+The command file is a controller-authored, remote-executed script. Write it as if you are logged into the HPC/remote machine:
+
+- paths should be HPC/remote paths
+- commands run from `PROJECT_DIR` unless the script changes directory
+- helper configs, restart/status files, and scripts must be available on the HPC/remote filesystem or in the mounted command channel
+- local laptop paths are useful only while preparing files before they are pushed, copied, or placed in the shared channel
 
 Example:
 

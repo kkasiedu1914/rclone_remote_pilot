@@ -2,15 +2,17 @@
 
 ## Purpose
 
-`rclone_remote_pilot` is a control-plane toolkit for running shell commands on a remote Linux or HPC project through a shared Google Drive command folder.
+`rclone_remote_pilot` is a control-plane toolkit for remote-piloting an HPC, lab server, cloud VM, or other remote Linux desktop through a shared Google Drive command folder.
 
 The system separates:
 
 - command transport
-- local execution
+- remote-side execution
 - log publication
 - output mirroring
 - optional Slurm supervision and notifications
+
+The controller machine prepares and edits control inputs. The HPC/remote machine runs the relay, mounts the shared command channel, executes command snapshots from `PROJECT_DIR`, supervises restarts, sends notifications, and mirrors outputs.
 
 ## Main Components
 
@@ -71,7 +73,7 @@ Important directories:
 1. `relayctl.sh start` loads config.
 2. `relay.sh` starts and acquires the relay lock.
 3. The relay ensures the command-channel mount is healthy.
-4. If the watched command file does not exist, the relay creates an empty placeholder.
+4. If the watched command file does not exist, the relay logs a warning and waits for the user to create it in the shared Drive folder.
 5. The relay polls for command-file changes.
 6. On change, the relay snapshots the command file into `STATE_DIR`.
 7. The relay executes that snapshot from `PROJECT_DIR`.

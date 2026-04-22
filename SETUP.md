@@ -4,6 +4,15 @@ This guide assumes one person owns the Google Drive folders and one or more remo
 
 The refactored model supports multiple named project instances on the same system. One shared code copy of `rclone_remote_pilot` can manage many separate projects, and each project gets its own config and runtime state.
 
+The system is for remote-piloting an HPC, lab server, cloud VM, or other remote Linux desktop from a controller machine such as a laptop or workstation. Keep this boundary clear:
+
+- Controller machine
+  Create Drive folders, run `configure.sh` if you want to generate the committed project config locally, edit `commands.sh` through the shared Drive folder, and commit/push config changes.
+- HPC/remote machine
+  Install or load runtime dependencies, keep the checkout that contains `projects/<project>.env`, place machine-only overrides in `projects/<project>.local.env`, provide secrets such as the notifier password file, and run `relayctl.sh`, `job_supervisor.sh`, `sync_mirror.sh`, and `repair_mount.sh`.
+
+Files that are read by the running relay, supervisor, restart loop, or status checks must exist on the HPC/remote machine or in the mounted command channel. A file that exists only on the controller machine is invisible to those runtime scripts.
+
 The default Google Drive account to grant access to is:
 
 ```text
@@ -66,7 +75,7 @@ Use a different remote name if needed; store that in config later.
 
 ## 5. Configure one project instance
 
-From the pilot directory:
+You can run this from the controller checkout or directly on the HPC/remote checkout. Either way, answer prompts with HPC/remote paths because those are the paths the relay will use when it runs:
 
 ```bash
 cd /home/kkasiedu/projects/rclone_remote_pilot
@@ -90,6 +99,8 @@ projects/my_project.local.env
 ```
 
 That local override file stays ignored by git.
+
+Use `projects/my_project.local.env` on the HPC/remote machine for values that should not be committed, or for temporary runtime tuning that the relay should load after a restart. Examples include a different `SLEEP_SECS`, `INTERVAL_SEC`, `COMMAND_FILE_NAME`, `RUN_IN_BACKGROUND`, or a host-specific `RCLONE_CONFIG`.
 
 `configure.sh` supports three project configuration depths:
 
@@ -170,6 +181,8 @@ Remote Google Drive layout:
 
 ## 8. Start the relay
 
+Run this on the HPC/remote machine from inside the pilot directory:
+
 ```bash
 ./relayctl.sh start
 ./relayctl.sh status
@@ -184,11 +197,11 @@ What happens:
 5. When `commands.sh` changes, it copies a snapshot locally and runs it from `PROJECT_DIR`.
 6. It republishes logs to `command-channel/logs/`.
 
-Because the relay auto-`cd`s into `PROJECT_DIR`, commands run in the actual workload project by default.
+Because the relay auto-`cd`s into `PROJECT_DIR`, commands run in the actual workload project on the HPC/remote machine by default.
 
 ## 9. First command test
 
-Put this file in the shared `command-channel` folder as `commands.sh`:
+Put this file in the shared `command-channel` folder as `commands.sh`. You can edit it from the controller side, but it is executed on the HPC/remote machine:
 
 ```bash
 #!/usr/bin/env bash
@@ -248,6 +261,8 @@ Then set:
 - optionally `NOTIFICATION_TO_SECONDARY`
   - can usually be left at the default `achenie@vt.edu`
 - `NOTIFIER_PASSWORD_FILE`
+
+These notification and supervisor settings are read on the HPC/remote machine. If you change them in shell exports or in `projects/<project>.local.env`, restart `job_supervisor.sh` or start a new Slurm job so the new values are loaded.
 
 ## 12. Shared-Code Multi-User Example
 
