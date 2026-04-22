@@ -292,6 +292,8 @@ export RCLONE_EXTRA_FLAGS="--fast-list --transfers=16 --checkers=16"
   Space-separated list of files whose tails are attached in start/finish notification emails. By default this now includes the Slurm stdout file plus the current relay and supervisor logs.
 - `FINISH_MARGIN_SECONDS`
   Time-before-walltime margin for final cleanup behavior.
+- `EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS`
+  Delay after the final Slurm notification before clearing captured `.email_notifier.started.*` files. Defaults to `30`.
 - `SLURM_TIME_TZ`
   Time zone assumed when parsing Slurm timestamps.
 - `REPORT_TZ_ET`
@@ -322,7 +324,7 @@ Some settings are read only when a script starts, while others matter only for n
 - Requires rerunning `sync_mirror.sh`:
   `SYNC_SOURCE_DIR`, `MIRROR_ROOT_FOLDER_ID`, `MIRROR_REMOTE_SUBDIR`, `SYNC_INCLUDE_GLOBS`, `SYNC_EXCLUDES`, `RCLONE_EXTRA_FLAGS`
 - Requires relaunching `job_supervisor.sh`:
-  `INTERVAL_SEC`, `EMAIL_ON_START`, `FINISH_MARGIN_SECONDS`, `JOB_NOTIFICATION_NAME`, `MAIL_LOG_FILES`
+  `INTERVAL_SEC`, `EMAIL_ON_START`, `FINISH_MARGIN_SECONDS`, `EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS`, `JOB_NOTIFICATION_NAME`, `MAIL_LOG_FILES`
 - Requires relaunching `job_notifier.sh` or a new Slurm job:
   `SMTP_USER`, `NOTIFIER_PASSWORD_FILE`, `NOTIFICATION_TO_PRIMARY`, `NOTIFICATION_TO_SECONDARY`, `SLURM_TIME_TZ`, `REPORT_TZ_ET`, `REPORT_TZ_GMT`
 

@@ -165,6 +165,7 @@ load_project_env() {
   export EMAIL_ON_START="$(first_defined_value "1" "${pref}_EMAIL_ON_START" EMAIL_ON_START)"
   export EMAIL_SENTINEL_FILE="$(first_defined_value "$STATE_DIR/.email_notifier.started.${SLURM_JOB_ID:-unknown}" "${pref}_EMAIL_SENTINEL_FILE" EMAIL_SENTINEL_FILE)"
   export FINISH_MARGIN_SECONDS="$(first_defined_value "60" "${pref}_FINISH_MARGIN_SECONDS" FINISH_MARGIN_SECONDS)"
+  export EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS="$(first_defined_value "30" "${pref}_EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS" EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS)"
   export MAIL_LOG_FILES="$(first_defined_value "slurm-${SLURM_JOB_ID:-unknown}.out $RELAY_LOG_FILE $SUPERVISOR_LOG_FILE" "${pref}_MAIL_LOG_FILES" MAIL_LOG_FILES)"
   export SLURM_TIME_TZ="$(first_defined_value "America/New_York" "${pref}_SLURM_TIME_TZ" SLURM_TIME_TZ)"
   export REPORT_TZ_ET="$(first_defined_value "America/New_York" "${pref}_REPORT_TZ_ET" REPORT_TZ_ET)"

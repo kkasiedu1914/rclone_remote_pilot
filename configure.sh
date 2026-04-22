@@ -229,6 +229,7 @@ JOB_NOTIFICATION_NAME_VALUE="$(project_setting_default JOB_NOTIFICATION_NAME "$T
 EMAIL_ON_START_VALUE="$(project_setting_default EMAIL_ON_START "${EMAIL_ON_START:-1}")"
 EMAIL_SENTINEL_FILE_VALUE="$(project_setting_default EMAIL_SENTINEL_FILE "$STATE_DIR_VALUE/.email_notifier.started.\${SLURM_JOB_ID:-unknown}")"
 FINISH_MARGIN_SECONDS_VALUE="$(project_setting_default FINISH_MARGIN_SECONDS "${FINISH_MARGIN_SECONDS:-60}")"
+EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS_VALUE="$(project_setting_default EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS "${EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS:-30}")"
 MAIL_LOG_FILES_VALUE="$(project_setting_default MAIL_LOG_FILES "slurm-\${SLURM_JOB_ID:-unknown}.out $RELAY_LOG_FILE_VALUE $SUPERVISOR_LOG_FILE_VALUE")"
 SLURM_TIME_TZ_VALUE="$(project_setting_default SLURM_TIME_TZ "${SLURM_TIME_TZ:-America/New_York}")"
 REPORT_TZ_ET_VALUE="$(project_setting_default REPORT_TZ_ET "${REPORT_TZ_ET:-America/New_York}")"
@@ -252,6 +253,7 @@ if depth_is_at_least "advanced"; then
   prompt_value PUBLISH_LOGS_VALUE "Publish logs back to the command channel (1=yes, 0=no)" "$PUBLISH_LOGS_VALUE"
   prompt_value EMAIL_ON_START_VALUE "Auto-start email notifier inside Slurm jobs (1=yes, 0=no)" "$EMAIL_ON_START_VALUE"
   prompt_value FINISH_MARGIN_SECONDS_VALUE "Seconds before walltime to stop relay / send final handling" "$FINISH_MARGIN_SECONDS_VALUE"
+  prompt_value EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS_VALUE "Seconds to wait after final notification before clearing email sentinels" "$EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS_VALUE"
 fi
 
 if depth_is_at_least "advanced-all"; then
@@ -332,6 +334,7 @@ write_setting "RCLONE_REMOTE" "$RCLONE_REMOTE_VALUE"
     write_setting "PUBLISH_LOGS" "$PUBLISH_LOGS_VALUE"
     write_setting "EMAIL_ON_START" "$EMAIL_ON_START_VALUE"
     write_setting "FINISH_MARGIN_SECONDS" "$FINISH_MARGIN_SECONDS_VALUE"
+    write_setting "EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS" "$EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS_VALUE"
   fi
   if depth_is_at_least "advanced-all"; then
     write_setting "COMMAND_CHANNEL_LOG_DIR" "$COMMAND_CHANNEL_LOG_DIR_VALUE"

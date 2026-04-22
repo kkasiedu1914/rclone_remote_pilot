@@ -195,6 +195,40 @@ get_final_state() {
   echo "UNKNOWN"
 }
 
+cleanup_email_sentinels_after_final() {
+  local delay="${EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS:-30}"
+  if [[ ! "$delay" =~ ^[0-9]+$ ]]; then
+    delay=30
+  fi
+
+  if [[ ! -d "$STATE_DIR" ]]; then
+    email_log_event "SENTINEL_CLEANUP_SKIP" "missing_state_dir=$STATE_DIR"
+    return 0
+  fi
+
+  local -a sentinels=()
+  mapfile -t sentinels < <(find "$STATE_DIR" -maxdepth 1 -type f -name '.email_notifier.started.*' 2>/dev/null || true)
+
+  if (( delay > 0 )); then
+    sleep "$delay"
+  fi
+
+  local sentinel=""
+  local removed=0
+  for sentinel in "${sentinels[@]}"; do
+    case "$sentinel" in
+      "$STATE_DIR"/.email_notifier.started.*)
+        if [[ -f "$sentinel" ]]; then
+          rm -f -- "$sentinel" 2>/dev/null || true
+          removed=$((removed + 1))
+        fi
+        ;;
+    esac
+  done
+
+  email_log_event "SENTINEL_CLEANUP" "delay_seconds=$delay removed=$removed state_dir=$STATE_DIR"
+}
+
 expand_deferred_string() {
   local raw="${1:-}"
   eval "printf '%s' \"$raw\""
@@ -398,6 +432,7 @@ main() {
   local final_state=""
   final_state="$(get_final_state)"
   send_mail "FINISHED (state=$final_state)"
+  cleanup_email_sentinels_after_final
 }
 
 main "$@"

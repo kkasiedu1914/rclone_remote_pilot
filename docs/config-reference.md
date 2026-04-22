@@ -149,6 +149,8 @@ Current shell exports are also local to the shell where they are set. Exporting 
   Sentinel preventing duplicate notifier launch for the same job.
 - `FINISH_MARGIN_SECONDS`
   Margin before walltime for cleanup.
+- `EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS`
+  Delay after the final Slurm notification before removing captured `.email_notifier.started.*` sentinels. Defaults to `30`.
 - `MAIL_LOG_FILES`
   Space-separated list of log files tailed into notification emails. Missing entries, including unavailable Slurm stdout files, are skipped.
 - `SLURM_TIME_TZ`
