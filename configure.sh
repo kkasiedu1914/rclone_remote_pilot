@@ -386,15 +386,30 @@ Note:
 - You must create the shared Drive command file yourself as ${COMMAND_FILE_NAME_VALUE}.
 - The relay will not auto-create the command file.
 
-Next steps:
-1. Select the project instance:
-   export REMOTE_PILOT_PROJECT=$TARGET_PROJECT
-2. Confirm your rclone remote can see the shared folders:
-   rclone lsd ${RCLONE_REMOTE_VALUE}
-3. In the shared Google Drive command folder, create:
+Next steps are split by where they happen.
+
+Controller/user side:
+1. Make sure the generated project config is available to the remote runtime checkout.
+   If you configured locally, commit and push $ENV_FILE, then pull it on the remote system.
+   Alternatively, place the file at the matching path under the remote rclone_remote_pilot checkout.
+2. In the shared Google Drive command folder, create:
    ${COMMAND_FILE_NAME_VALUE}
-4. Start the relay:
+   You can create or edit this from the controller side, but every line inside it runs on the remote runtime system.
+
+Remote runtime side:
+Run these on the HPC, lab server, cloud VM, or other remote Linux system being accessed.
+This may be done by you after logging in, or by a collaborator who controls that system.
+The codebase being piloted must already be present on that remote system at:
+  ${PROJECT_DIR_VALUE}
+The rclone_remote_pilot checkout must also be present there, with this project config under its projects/ directory.
+For more detail, see README.md, especially "Controller Machine vs HPC/Remote Machine" and "Runtime Working Directory".
+
+3. Select the project instance in the remote shell:
+   export REMOTE_PILOT_PROJECT=$TARGET_PROJECT
+4. Confirm the remote system's rclone remote can see the shared folders:
+   rclone lsd ${RCLONE_REMOTE_VALUE}
+5. Start the relay on the remote system from inside the rclone_remote_pilot directory:
    ./relayctl.sh start
-5. Mirror project outputs back to Drive when needed:
+6. Mirror project outputs back to Drive from the remote system when needed:
    ./sync_mirror.sh
 EOF
