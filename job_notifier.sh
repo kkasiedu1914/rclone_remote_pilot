@@ -273,6 +273,7 @@ build_project_summary() {
   cat <<EOF
 Project name:            $PROJECT_NAME
 Notifier mode:           $NOTIFIER_MODE
+Execution side:          remote runtime system where job_notifier.sh is running
 Host:                    $HOST
 Workdir:                 $WORKDIR
 Project directory:       $PROJECT_DIR
