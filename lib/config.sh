@@ -247,6 +247,35 @@ cleanup_remote_pilot_fresh_run_files() {
   fi
 }
 
+cleanup_remote_pilot_lock_files() {
+  local project_root="${1:-${REMOTE_PILOT_HOME:-}}"
+  local selected_project="${2:-${REMOTE_PILOT_PROJECT:-}}"
+
+  if [[ -n "$project_root" && -n "$selected_project" ]]; then
+    unset REMOTE_PILOT_PROJECT_FILE REMOTE_PILOT_PROJECT_LOCAL_FILE
+    export REMOTE_PILOT_PROJECT="$selected_project"
+    load_project_env "$project_root"
+  elif [[ -n "$project_root" && -z "${STATE_DIR:-}" ]]; then
+    load_project_env "$project_root"
+  fi
+
+  if [[ -z "${STATE_DIR:-}" ]]; then
+    printf '%s\n' "WARN: lock cleanup skipped because STATE_DIR is not set" >&2
+    return 0
+  fi
+
+  rm -f \
+    "${RELAY_LOCK_FILE:-}" \
+    "${SUPERVISOR_LOCK_FILE:-}" \
+    "${EMAIL_LOCKFILE:-}" \
+    2>/dev/null || true
+
+  find "$STATE_DIR" -maxdepth 1 -type f \
+    \( -name '*.lock' \
+       -o -name '.job_notifier.lock.*' \) \
+    -delete 2>/dev/null || true
+}
+
 require_config_value() {
   local name="$1"
   local value="${!name:-}"
