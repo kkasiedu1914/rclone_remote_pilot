@@ -24,6 +24,7 @@ if [[ -z "$JOB_NAME" || "$JOB_NAME" == "unknown" || "$JOB_NAME" == "Unknown" || 
 fi
 HOST="$(hostname)"
 WORKDIR="$(pwd)"
+NOTIFIER_DISPLAY_WORKDIR="${PROJECT_DIR:-$WORKDIR}"
 
 email_log_event() {
   local status="$1"
@@ -309,7 +310,7 @@ Project name:            $PROJECT_NAME
 Notifier mode:           $NOTIFIER_MODE
 Execution side:          remote runtime system where job_notifier.sh is running
 Host:                    $HOST
-Workdir:                 $WORKDIR
+Workdir:                 $NOTIFIER_DISPLAY_WORKDIR
 Project directory:       $PROJECT_DIR
 Project instance root:   $PROJECT_INSTANCE_ROOT
 Command channel mount:   $COMMAND_CHANNEL_MOUNT
@@ -357,7 +358,7 @@ Job ID:          $JOB_ID
 Job name:        $JOB_NAME
 Project:         $PROJECT_NAME
 Host:            $HOST
-Workdir:         $WORKDIR
+Workdir:         $NOTIFIER_DISPLAY_WORKDIR
 
 Current time (ET):       $now_et
 Current time (GMT):      $now_gmt
@@ -389,7 +390,7 @@ Status:                  $status
 Project:                 $PROJECT_NAME
 Job name:                $JOB_NAME
 Host:                    $HOST
-Workdir:                 $WORKDIR
+Workdir:                 $NOTIFIER_DISPLAY_WORKDIR
 Current time (ET):       $now_et
 Current time (GMT):      $now_gmt
 
