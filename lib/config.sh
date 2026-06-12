@@ -164,6 +164,7 @@ load_project_env() {
   export JOB_NOTIFICATION_NAME="$(first_defined_value "$PROJECT_NAME" "${pref}_JOB_NOTIFICATION_NAME" JOB_NOTIFICATION_NAME)"
   export EMAIL_ON_START="$(first_defined_value "1" "${pref}_EMAIL_ON_START" EMAIL_ON_START)"
   export EMAIL_SENTINEL_FILE="$(first_defined_value "$STATE_DIR/.email_notifier.started.${SLURM_JOB_ID:-unknown}" "${pref}_EMAIL_SENTINEL_FILE" EMAIL_SENTINEL_FILE)"
+  export EMAIL_LOCKFILE="$(first_defined_value "$STATE_DIR/.job_notifier.lock.${SLURM_JOB_ID:-unknown}" "${pref}_EMAIL_LOCKFILE" EMAIL_LOCKFILE)"
   export FINISH_MARGIN_SECONDS="$(first_defined_value "60" "${pref}_FINISH_MARGIN_SECONDS" FINISH_MARGIN_SECONDS)"
   export EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS="$(first_defined_value "30" "${pref}_EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS" EMAIL_SENTINEL_CLEANUP_DELAY_SECONDS)"
   export MAIL_LOG_FILES="$(first_defined_value "slurm-${SLURM_JOB_ID:-unknown}.out $RELAY_LOG_FILE $SUPERVISOR_LOG_FILE" "${pref}_MAIL_LOG_FILES" MAIL_LOG_FILES)"
@@ -187,6 +188,63 @@ ensure_runtime_dirs() {
     [[ -n "$dir" ]] && dirs+=("$dir")
   done
   mkdir -p "${dirs[@]}"
+}
+
+cleanup_remote_pilot_fresh_run_files() {
+  local project_root="${1:-${REMOTE_PILOT_HOME:-}}"
+  local selected_project="${2:-${REMOTE_PILOT_PROJECT:-}}"
+  local include_logs="${3:-0}"
+
+  if [[ -n "$project_root" && -n "$selected_project" ]]; then
+    unset REMOTE_PILOT_PROJECT_FILE REMOTE_PILOT_PROJECT_LOCAL_FILE
+    export REMOTE_PILOT_PROJECT="$selected_project"
+    load_project_env "$project_root"
+  elif [[ -n "$project_root" && -z "${STATE_DIR:-}" ]]; then
+    load_project_env "$project_root"
+  fi
+
+  if [[ -z "${STATE_DIR:-}" ]]; then
+    printf '%s\n' "WARN: cleanup skipped because STATE_DIR is not set" >&2
+    return 0
+  fi
+
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+  rm -f \
+    "${RELAY_PID_FILE:-}" \
+    "${RELAY_LOCK_FILE:-}" \
+    "${SUPERVISOR_LOCK_FILE:-}" \
+    "${PREVIOUS_COMMAND_SCRIPT:-}" \
+    "${EMAIL_SENTINEL_FILE:-}" \
+    "${EMAIL_LOCKFILE:-}" \
+    2>/dev/null || true
+
+  find "$STATE_DIR" -maxdepth 1 -type f \
+    \( -name '.commands.*.sh' \
+       -o -name '.commands.snapshot.*.sh' \
+       -o -name '.email_notifier.started.*' \
+       -o -name '.job_notifier.lock.*' \) \
+    -delete 2>/dev/null || true
+
+  if [[ -d "${PIDS_DIR:-}" ]]; then
+    find "$PIDS_DIR" -maxdepth 1 -type f -name '*.pid' -delete 2>/dev/null || true
+  fi
+
+  if [[ "$include_logs" == "1" ]]; then
+    local log_file=""
+    for log_file in \
+      "${RELAY_LOG_FILE:-}" \
+      "${COMMAND_OUTPUT_LOG_FILE:-}" \
+      "${COMMAND_HISTORY_FILE:-}" \
+      "${SUPERVISOR_LOG_FILE:-}" \
+      "${SYNC_LOG_FILE:-}" \
+      "${EMAIL_LOG_FILE:-}"; do
+      if [[ -n "$log_file" ]]; then
+        mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
+        : > "$log_file" 2>/dev/null || true
+      fi
+    done
+  fi
 }
 
 require_config_value() {
