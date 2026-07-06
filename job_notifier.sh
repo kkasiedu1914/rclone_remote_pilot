@@ -26,6 +26,15 @@ HOST="$(hostname)"
 WORKDIR="$(pwd)"
 NOTIFIER_DISPLAY_WORKDIR="${PROJECT_DIR:-$WORKDIR}"
 
+display_value() {
+  local value="${1:-}"
+  if [[ -n "$value" ]]; then
+    printf '%s' "$value"
+  else
+    printf '%s' "(not configured)"
+  fi
+}
+
 email_log_event() {
   local status="$1"
   local detail="${2:-}"
@@ -306,17 +315,11 @@ build_log_sections() {
 
 build_project_summary() {
   cat <<EOF
-Project name:            $PROJECT_NAME
 Notifier mode:           $NOTIFIER_MODE
 Execution side:          remote runtime system where job_notifier.sh is running
-Host:                    $HOST
-Workdir:                 $NOTIFIER_DISPLAY_WORKDIR
-Project directory:       $PROJECT_DIR
 Project instance root:   $PROJECT_INSTANCE_ROOT
 Command channel mount:   $COMMAND_CHANNEL_MOUNT
 Command file name:       $COMMAND_FILE_NAME
-Mirror remote:           $RCLONE_REMOTE
-Mirror subdir:           $MIRROR_REMOTE_SUBDIR
 Relay poll interval:     $SLEEP_SECS
 Supervisor interval:     $INTERVAL_SEC
 Run in background:       $RUN_IN_BACKGROUND
@@ -324,6 +327,23 @@ Publish logs:            $PUBLISH_LOGS
 Log directory:           $LOG_DIR
 State directory:         $STATE_DIR
 EOF
+}
+
+build_email_context() {
+  local status="$1"
+  local include_job_id="${2:-0}"
+
+  printf '%-24s %s\n' "Status:" "$status"
+  if [[ "$include_job_id" == "1" ]]; then
+    printf '%-24s %s\n' "Job ID:" "$JOB_ID"
+  fi
+  printf '%-24s %s\n' "Project name:" "$PROJECT_NAME"
+  printf '%-24s %s\n' "Job name:" "$JOB_NAME"
+  printf '%-24s %s\n' "Host:" "$HOST"
+  printf '%-24s %s\n' "Work directory:" "$NOTIFIER_DISPLAY_WORKDIR"
+  printf '%-24s %s\n' "Project directory:" "$PROJECT_DIR"
+  printf '%-24s %s\n' "Mirror remote:" "$(display_value "${RCLONE_REMOTE:-}")"
+  printf '%-24s %s\n' "Mirror subdir:" "$(display_value "${MIRROR_REMOTE_SUBDIR:-}")"
 }
 
 send_mail() {
@@ -353,12 +373,7 @@ send_mail() {
     end_gmt="$(slurm_ts_to_tz "$SLURM_END_EST" "$REPORT_TZ_GMT")"
     subject="[Remote Pilot $JOB_ID] $status $icon"
     body=$(cat <<EOF
-Status:          $status
-Job ID:          $JOB_ID
-Job name:        $JOB_NAME
-Project:         $PROJECT_NAME
-Host:            $HOST
-Workdir:         $NOTIFIER_DISPLAY_WORKDIR
+$(build_email_context "$status" "1")
 
 Current time (ET):       $now_et
 Current time (GMT):      $now_gmt
@@ -386,17 +401,15 @@ EOF
   else
     subject="[Remote Pilot $PROJECT_NAME] $status (non-Slurm) $icon"
     body=$(cat <<EOF
-Status:                  $status
-Project:                 $PROJECT_NAME
-Job name:                $JOB_NAME
-Host:                    $HOST
-Workdir:                 $NOTIFIER_DISPLAY_WORKDIR
+$(build_email_context "$status")
+
 Current time (ET):       $now_et
 Current time (GMT):      $now_gmt
 
 Could not detect a Slurm environment or usable Slurm job parameters.
 Using standalone project notification mode instead of Slurm job reporting.
 
+Project runtime summary:
 $(build_project_summary)
 EOF
 )
