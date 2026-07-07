@@ -341,7 +341,6 @@ build_email_context() {
   printf '%-24s %s\n' "Job name:" "$JOB_NAME"
   printf '%-24s %s\n' "Host:" "$HOST"
   printf '%-24s %s\n' "Work directory:" "$NOTIFIER_DISPLAY_WORKDIR"
-  printf '%-24s %s\n' "Project directory:" "$PROJECT_DIR"
   printf '%-24s %s\n' "Mirror remote:" "$(display_value "${RCLONE_REMOTE:-}")"
   printf '%-24s %s\n' "Mirror subdir:" "$(display_value "${MIRROR_REMOTE_SUBDIR:-}")"
 }
